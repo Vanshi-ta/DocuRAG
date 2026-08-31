@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Uploaded documents and generated vector store — user data, not source code
+data/uploads/
+data/vector_store/
+
+# Environment variables / secrets (see Section 19)
+.env
+
+# Streamlit local config/cache
+.streamlit/
+
+# OS/editor cruft
+.DS_Store
+.vscode/
+*.log
