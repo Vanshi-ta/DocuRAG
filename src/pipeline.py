@@ -79,13 +79,31 @@ def run_full_ingestion_pipeline(
 def load_vector_store(embedding_dimension: int) -> Tuple[FaissVectorStore, MetadataStore]:
     """
     Reload a previously persisted FAISS index + metadata store from disk,
-    without re-running ingestion/chunking/embedding — this is what a future
+    without re-running ingestion/chunking/embedding — this is what the
     Streamlit app calls on startup if an index already exists, instead of
-    rebuilding it from PDFs every time.
+    forcing the user to re-upload every session.
     """
     faiss_store = FaissVectorStore.load(FAISS_INDEX_PATH, embedding_dimension)
     metadata_store = MetadataStore.load(METADATA_STORE_PATH)
     return faiss_store, metadata_store
+
+
+def reset_all(directory: Path = UPLOAD_DIR) -> None:
+    """
+    Delete all uploaded PDFs and the persisted FAISS index + metadata
+    store, returning the project to a clean, unindexed state.
+
+    This is a Phase 7 addition: the Streamlit "Reset index" button calls
+    this instead of doing raw filesystem cleanup itself, keeping app.py
+    free of anything beyond UI/session-state concerns (Phase 7 guide's
+    architecture requirement).
+    """
+    for pdf_path in directory.glob("*.pdf"):
+        pdf_path.unlink()
+    if FAISS_INDEX_PATH.exists():
+        FAISS_INDEX_PATH.unlink()
+    if METADATA_STORE_PATH.exists():
+        METADATA_STORE_PATH.unlink()
 
 
 if __name__ == "__main__":
