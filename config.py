@@ -44,3 +44,15 @@ METADATA_STORE_PATH = VECTOR_STORE_DIR / "metadata.json"
 # DEFAULT_TOP_K: how many chunks to retrieve per question by default.
 # See Phase 5 guide Section 4 for the reasoning behind this value.
 DEFAULT_TOP_K = 4
+
+# --- Generation (Phase 6) ---------------------------------------------------
+# OLLAMA_BASE_URL: Ollama's local REST API — no internet, no API key.
+# OLLAMA_MODEL:    the local LLM to use. See Phase 6 guide Sections 2/6 for
+#                   why this model was chosen and what to swap in on a
+#                   lower-RAM laptop.
+# LLM_TEMPERATURE: low value = more deterministic, less "creative" output —
+#                   appropriate for grounded factual QA. See Section 16.
+OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_MODEL = "llama3.2:3b"
+LLM_TEMPERATURE = 0.1
+LLM_REQUEST_TIMEOUT_SECONDS = 120
