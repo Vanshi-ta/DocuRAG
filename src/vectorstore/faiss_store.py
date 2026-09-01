@@ -59,9 +59,11 @@ class FaissVectorStore:
         if vectors.dtype != np.float32:
             raise ValueError(f"FAISS requires float32 vectors, got {vectors.dtype}")
         if vectors.ndim != 2 or vectors.shape[1] != self.embedding_dimension:
+            got_dim = vectors.shape[1] if vectors.ndim == 2 else vectors.shape
             raise ValueError(
-                f"Expected vectors of shape (N, {self.embedding_dimension}), "
-                f"got {vectors.shape}"
+                f"Vector dimension mismatch: index expects dimension "
+                f"{self.embedding_dimension}, got dimension {got_dim} "
+                f"(full shape {vectors.shape})"
             )
 
         start_id = self.index.ntotal
