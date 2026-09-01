@@ -17,3 +17,11 @@ UPLOAD_DIR = BASE_DIR / "data" / "uploads"
 
 # File types the ingestion pipeline is allowed to process.
 SUPPORTED_EXTENSIONS = {".pdf"}
+
+# --- Chunking (Phase 3) ---------------------------------------------------
+# CHUNK_SIZE:    max characters per chunk.
+# CHUNK_OVERLAP: characters repeated between consecutive chunks, so a fact
+#                sitting right on a chunk boundary still appears whole in
+#                at least one chunk.
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 150
