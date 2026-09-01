@@ -25,3 +25,15 @@ SUPPORTED_EXTENSIONS = {".pdf"}
 #                at least one chunk.
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
+
+# --- Embeddings & Vector Store (Phase 4) -----------------------------------
+# EMBEDDING_MODEL_NAME: a local Sentence Transformers model — downloaded
+#                        once from Hugging Face, then cached locally. No API
+#                        key, no per-call cost, no internet needed after the
+#                        first download. See Phase 4 guide Sections 6-7.
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+
+# Where the persistent FAISS index and its parallel metadata file live.
+VECTOR_STORE_DIR = BASE_DIR / "data" / "vector_store"
+FAISS_INDEX_PATH = VECTOR_STORE_DIR / "index.faiss"
+METADATA_STORE_PATH = VECTOR_STORE_DIR / "metadata.json"

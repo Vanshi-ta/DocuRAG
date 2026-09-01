@@ -1,21 +1,30 @@
 """
 Pipeline orchestration for DocuRAG.
 
-This module is the ONLY place that chains ingestion (Phase 2) and chunking
-(Phase 3) together. Neither pdf_loader.py nor text_splitter.py imports the
-other — pdf_loader produces Documents, text_splitter consumes Documents,
-and this file wires them in sequence. That keeps each stage independently
-testable and swappable (e.g., you could later add a non-PDF loader here
-without touching text_splitter.py at all).
+This module is the ONLY place that chains ingestion (Phase 2), chunking
+(Phase 3), and embedding + vector storage (Phase 4) together. Each stage
+module stays independently testable and swappable — this file just wires
+them in sequence, in the correct order.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Tuple
 
-from config import CHUNK_OVERLAP, CHUNK_SIZE, UPLOAD_DIR
+from config import (
+    CHUNK_OVERLAP,
+    CHUNK_SIZE,
+    FAISS_INDEX_PATH,
+    METADATA_STORE_PATH,
+    UPLOAD_DIR,
+)
+from src.ingestion.embedder import Embedder
 from src.ingestion.pdf_loader import IngestionResult, load_pdfs_from_directory
 from src.ingestion.text_splitter import ChunkingResult, split_documents
+from src.vectorstore.faiss_store import FaissVectorStore
+from src.vectorstore.index_builder import build_vector_index
+from src.vectorstore.metadata_store import MetadataStore
 
 
 def ingest_and_chunk(
@@ -24,12 +33,8 @@ def ingest_and_chunk(
     chunk_overlap: int = CHUNK_OVERLAP,
 ) -> tuple[IngestionResult, ChunkingResult]:
     """
-    Run the full Phase 2 + Phase 3 pipeline: load every PDF in `directory`,
-    then split the resulting page-level Documents into overlapping chunks.
-
-    Returns both results (not just the chunks) so callers/tests can inspect
-    what happened at each stage — e.g. which files were skipped during
-    ingestion, independent of how chunking went.
+    Run the Phase 2 + Phase 3 pipeline: load every PDF in `directory`, then
+    split the resulting page-level Documents into overlapping chunks.
     """
     ingestion_result = load_pdfs_from_directory(directory)
     chunking_result = split_documents(
@@ -40,13 +45,63 @@ def ingest_and_chunk(
     return ingestion_result, chunking_result
 
 
+def run_full_ingestion_pipeline(
+    directory: Path = UPLOAD_DIR,
+    chunk_size: int = CHUNK_SIZE,
+    chunk_overlap: int = CHUNK_OVERLAP,
+    embedder: Embedder | None = None,
+    persist: bool = True,
+) -> Tuple[IngestionResult, ChunkingResult, FaissVectorStore, MetadataStore]:
+    """
+    Run the complete Phase 2 + 3 + 4 pipeline end to end: PDFs -> Documents
+    -> chunks -> embeddings -> FAISS index (+ metadata store), optionally
+    persisting the index and metadata to disk.
+
+    `embedder` can be passed in so a caller (e.g. a future Streamlit app)
+    can load the model ONCE and reuse it across multiple pipeline runs,
+    rather than this function silently constructing a new one every call —
+    see Phase 4 guide Section 19 for why that matters.
+    """
+    ingestion_result, chunking_result = ingest_and_chunk(directory, chunk_size, chunk_overlap)
+
+    if embedder is None:
+        embedder = Embedder()
+
+    faiss_store, metadata_store = build_vector_index(chunking_result.chunks, embedder)
+
+    if persist:
+        faiss_store.save(FAISS_INDEX_PATH)
+        metadata_store.save(METADATA_STORE_PATH)
+
+    return ingestion_result, chunking_result, faiss_store, metadata_store
+
+
+def load_vector_store(embedding_dimension: int) -> Tuple[FaissVectorStore, MetadataStore]:
+    """
+    Reload a previously persisted FAISS index + metadata store from disk,
+    without re-running ingestion/chunking/embedding — this is what a future
+    Streamlit app calls on startup if an index already exists, instead of
+    rebuilding it from PDFs every time.
+    """
+    faiss_store = FaissVectorStore.load(FAISS_INDEX_PATH, embedding_dimension)
+    metadata_store = MetadataStore.load(METADATA_STORE_PATH)
+    return faiss_store, metadata_store
+
+
 if __name__ == "__main__":
     # Run from the project root with:
     #   python -m src.pipeline
-    ingestion_result, chunking_result = ingest_and_chunk()
+    ingestion_result, chunking_result, faiss_store, metadata_store = run_full_ingestion_pipeline()
 
     print("\n--- Ingestion (Phase 2) ---")
     print(ingestion_result.summary())
 
     print("\n--- Chunking (Phase 3) ---")
     print(chunking_result.summary())
+
+    print("\n--- Embedding + Vector Store (Phase 4) ---")
+    print(f"Vectors in FAISS index: {faiss_store.index.ntotal}")
+    print(f"Records in metadata store: {len(metadata_store)}")
+    print(f"Embedding dimension: {faiss_store.embedding_dimension}")
+    print(f"Persisted to: {FAISS_INDEX_PATH} and {METADATA_STORE_PATH}")
+
