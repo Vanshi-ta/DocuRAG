@@ -105,6 +105,49 @@ class Retriever:
         )
         return results
 
+    def retrieve_raw(
+        self,
+        question: str,
+        search_width: int,
+    ) -> List[RetrievedChunk]:
+        """
+        Diagnostic-only method: return up to `search_width` raw FAISS
+        candidates, UNFILTERED and UNCLAMPED against MAX_TOP_K.
+
+        `retrieve()` and `retrieve_diverse()` both clamp their `top_k`
+        argument against MAX_TOP_K because that limit is meant to bound how
+        much context ultimately reaches the LLM — a real production
+        concern. It is NOT meant to limit how deep a diagnostic script can
+        inspect the raw ranking (e.g. "show me the top 15 candidates and
+        their scores" for debugging a threshold value), so this method
+        intentionally does not apply that clamp. It exists purely to
+        support scripts/tune_threshold.py — nothing in the answer-serving
+        path (rag_engine.py) calls this.
+        """
+        if not question or not question.strip():
+            raise ValueError("question must be a non-empty string")
+        if search_width < 1:
+            raise ValueError(f"search_width must be at least 1, got {search_width}")
+
+        query_vector = self.embedder.embed_query(question)
+        scores, ids = self.faiss_store.search(query_vector, top_k=search_width)
+
+        results: List[RetrievedChunk] = []
+        for score, vid in zip(scores[0], ids[0]):
+            if vid == -1:
+                continue
+            record = self.metadata_store.get(int(vid))
+            results.append(
+                RetrievedChunk(
+                    chunk_text=record.chunk_text,
+                    source_filename=record.source_filename,
+                    page_number=record.page_number,
+                    similarity_score=float(score),
+                    chunk_id=record.chunk_id,
+                )
+            )
+        return results
+
     def retrieve_diverse(
         self,
         question: str,
@@ -155,25 +198,31 @@ class Retriever:
         query_vector = self.embedder.embed_query(question)
         scores, ids = self.faiss_store.search(query_vector, top_k=pool_size)
 
-        candidates: List[RetrievedChunk] = []
-        n_filtered = 0
+        # Build the FULL raw pool first (before any threshold filtering) so
+        # that if filtering ends up discarding everything, we still have
+        # the actual scores/sources on hand to log — this is what the old
+        # version of this method could NOT do, since it discarded a
+        # below-threshold chunk's score the moment it failed the check.
+        raw_pool: List[RetrievedChunk] = []
         for score, vid in zip(scores[0], ids[0]):
             if vid == -1:
-                continue
-            score = float(score)
-            if similarity_threshold is not None and score < similarity_threshold:
-                n_filtered += 1
-                continue
+                continue  # FAISS pads with -1 when the index has fewer than pool_size vectors
             record = self.metadata_store.get(int(vid))
-            candidates.append(
+            raw_pool.append(
                 RetrievedChunk(
                     chunk_text=record.chunk_text,
                     source_filename=record.source_filename,
                     page_number=record.page_number,
-                    similarity_score=score,
+                    similarity_score=float(score),
                     chunk_id=record.chunk_id,
                 )
             )
+
+        if similarity_threshold is not None:
+            candidates = [c for c in raw_pool if c.similarity_score >= similarity_threshold]
+        else:
+            candidates = raw_pool
+        n_filtered = len(raw_pool) - len(candidates)
 
         selected: List[RetrievedChunk] = []
         per_source_count: Dict[str, int] = {}
@@ -197,11 +246,33 @@ class Retriever:
 
         n_sources = len({c.source_filename for c in selected})
         logger.info(
-            "retrieve_diverse: %d candidates -> %d selected from %d source(s) "
-            "for %r (pool=%d, top_k=%d, cap=%d, threshold=%s, %d filtered)",
-            len(candidates), len(selected), n_sources, question,
+            "retrieve_diverse: %d raw candidates from FAISS -> %d passed threshold -> "
+            "%d selected from %d source(s) for %r (pool=%d, top_k=%d, cap=%d, "
+            "threshold=%s, %d filtered out)",
+            len(raw_pool), len(candidates), len(selected), n_sources, question,
             pool_size, top_k, max_chunks_per_source, similarity_threshold, n_filtered,
         )
+
+        if not selected and raw_pool:
+            # This is the exact situation being diagnosed: the index is not
+            # empty and DID return candidates, but every one of them scored
+            # below similarity_threshold. Log the actual raw scores so this
+            # is diagnosable directly from the running app's log next time,
+            # without needing a separate script run.
+            preview = "; ".join(
+                f"{c.source_filename} p.{c.page_number} score={c.similarity_score:.4f}"
+                for c in raw_pool[:5]
+            )
+            logger.warning(
+                "retrieve_diverse: ALL %d raw candidates scored below "
+                "similarity_threshold=%s for %r — top raw candidates were: %s. "
+                "If a document you expect to match (e.g. a specific resume) does not "
+                "appear here at all, it may not be indexed; if it appears but with a "
+                "low score, the threshold may be too high for this query's phrasing — "
+                "see scripts/tune_threshold.py.",
+                len(raw_pool), similarity_threshold, question, preview,
+            )
+
         return selected
 
 

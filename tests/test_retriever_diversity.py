@@ -234,3 +234,29 @@ def test_entity_fanout_disabled_falls_back_to_old_behavior(dominated_corpus):
     # retrieve_diverse alone still recovers Manas here because he's within
     # the candidate pool (pool_size=5 covers all 5 chunks in this corpus).
     assert "Manas_Resume.pdf" in sources
+
+
+def test_all_candidates_filtered_out_logs_raw_scores_for_diagnosis(dominated_corpus, caplog):
+    """
+    Reproduces the exact scenario reported in production: retrieve_diverse
+    returns an empty list because every raw candidate scored below
+    similarity_threshold. Confirms the raw scores are still visible in the
+    log (this is the fix -- the old version discarded a chunk's score the
+    moment it failed the threshold check, so this diagnosis was impossible
+    from the log alone).
+    """
+    embedder, faiss_store, metadata_store, query = dominated_corpus
+    retriever = Retriever(embedder, faiss_store, metadata_store)
+
+    with caplog.at_level("WARNING"):
+        results = retriever.retrieve_diverse(
+            query, top_k=4, candidate_pool_size=5, max_chunks_per_source=2,
+            similarity_threshold=1.1,  # cosine similarity maxes out at 1.0 -- guaranteed impossible
+        )
+
+    assert results == []
+    warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("ALL 5 raw candidates scored below" in m for m in warning_messages)
+    # The actual source filenames and scores must be visible in the warning,
+    # not just a bare count.
+    assert any("Vanshita_Suryavanshi.pdf" in m for m in warning_messages)

@@ -179,7 +179,7 @@ def render_sources(sources, used_llm: bool) -> None:
         for s in sources:
             st.markdown(
                 f"- **{s.source_filename}**, page {s.page_number} "
-                f"(similarity: {s.similarity_score:.3f})"
+                f"(cosine similarity: {s.similarity_score:.3f})"
             )
 
 

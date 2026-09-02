@@ -65,6 +65,25 @@ def test_retrieve_returns_top_k_results(populated_store):
     assert results[0].similarity_score > 0.999
 
 
+def test_retrieve_raw_is_not_clamped_by_max_top_k(populated_store):
+    embedder, faiss_store, metadata_store = populated_store
+    retriever = Retriever(embedder, faiss_store, metadata_store)
+
+    # This fixture only has 3 chunks total, so asking for search_width=100
+    # should return all 3 without raising or clamping against MAX_TOP_K,
+    # unlike retrieve()/retrieve_diverse() which cap their top_k argument.
+    results = retriever.retrieve_raw("question about topic 1", search_width=100)
+    assert len(results) == 3
+
+
+def test_retrieve_raw_returns_unfiltered_scores_including_low_ones(populated_store):
+    embedder, faiss_store, metadata_store = populated_store
+    retriever = Retriever(embedder, faiss_store, metadata_store)
+
+    results = retriever.retrieve_raw("completely unrelated question", search_width=3)
+    assert len(results) == 3  # no threshold applied -- everything comes back
+
+
 def test_retrieve_rejects_empty_question(populated_store):
     embedder, faiss_store, metadata_store = populated_store
     retriever = Retriever(embedder, faiss_store, metadata_store)
