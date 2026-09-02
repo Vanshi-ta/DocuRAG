@@ -1,16 +1,17 @@
 """
-PDF ingestion module for DocuRAG — Phase 2.
+PDF ingestion module for DocuRAG.
 
 Responsible ONLY for:
     - discovering PDF files in a directory
     - validating that a path is a usable PDF
     - extracting per-page text using LangChain's PyPDFLoader (backed by pypdf)
     - normalizing and enriching each page's metadata
+    - classifying failures (missing / wrong type / empty file / corrupted /
+      encrypted / no extractable text) into specific exception types so
+      callers (pipeline, UI) can show a precise, actionable message instead
+      of a generic "something went wrong"
 
 This module has NO knowledge of chunking, embeddings, FAISS, or Streamlit.
-That boundary is intentional: this file should be fully testable and usable
-from a plain Python script, a Jupyter notebook, or (later) a Streamlit app,
-without ever importing `streamlit`.
 """
 
 from __future__ import annotations
@@ -25,10 +26,25 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 
 SUPPORTED_EXTENSIONS = {".pdf"}
+
+
+class PDFLoadError(Exception):
+    """Base class for every PDF-loading failure DocuRAG classifies explicitly."""
+
+
+class EmptyFileError(PDFLoadError):
+    """The file exists but contains zero bytes."""
+
+
+class CorruptedPDFError(PDFLoadError):
+    """The file could not be parsed as a valid PDF (bad structure, or encrypted)."""
+
+
+class NoExtractableTextError(PDFLoadError):
+    """The PDF parsed successfully but every page came back with no text
+    (typically a scanned/image-only PDF — DocuRAG does not do OCR)."""
 
 
 @dataclass
@@ -54,13 +70,11 @@ class IngestionResult:
 
 def validate_pdf_path(file_path: Path) -> None:
     """
-    Raise a clear, specific exception if `file_path` is not a usable PDF path.
-
-    This only checks the *filesystem-level* things: existence, that it's a
-    file (not a directory), and that the extension is supported. It does NOT
-    guarantee the PDF is actually readable — a file can look valid and still
-    be corrupted or encrypted, which is caught later when pypdf tries to
-    parse it.
+    Filesystem-level validation only: existence, that it's a file, that the
+    extension is supported, and that it isn't a zero-byte file. Does NOT
+    guarantee the PDF is actually parseable — that's caught in
+    load_single_pdf, which distinguishes corrupted/encrypted/empty-text
+    failures explicitly.
     """
     if not file_path.exists():
         raise FileNotFoundError(f"File does not exist: {file_path}")
@@ -69,37 +83,39 @@ def validate_pdf_path(file_path: Path) -> None:
     if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise ValueError(
             f"Unsupported file type '{file_path.suffix}' for {file_path.name}. "
-            f"Only {SUPPORTED_EXTENSIONS} are supported in Phase 2."
+            f"Only {SUPPORTED_EXTENSIONS} are supported."
         )
+    if file_path.stat().st_size == 0:
+        raise EmptyFileError(f"{file_path.name} is a 0-byte file.")
 
 
 def load_single_pdf(file_path: Path) -> List[Document]:
     """
-    Load one PDF and return a list of LangChain Document objects, one per page.
+    Load one PDF and return a list of LangChain Document objects, one per
+    page. Raises a specific PDFLoadError subclass on failure so callers can
+    show a precise message rather than a bare traceback.
 
     Each Document's metadata is enriched with:
-        - source_filename : original file's name (e.g. "handbook.pdf"),
-                             not the full filesystem path
-        - doc_id           : a stable UUID shared by every page of this
-                              document, so later phases can group chunks
-                              back to "the same source document"
+        - source_filename : original file's name
+        - doc_id           : a stable UUID shared by every page of this document
         - page_number      : 1-indexed page number, for human-facing citations
-                              ("see page 4"), which is what non-programmers
-                              expect
-        - page_raw         : the original 0-indexed page number PyPDFLoader
-                              returns, kept around for debugging
-
-    Any exception pypdf/PyPDFLoader raises on an unreadable or corrupted file
-    propagates up — the caller (load_pdfs_from_directory) is responsible for
-    catching it, so that one bad file never stops the whole batch.
+        - page_raw         : the original 0-indexed page number from PyPDFLoader
     """
     validate_pdf_path(file_path)
 
-    loader = PyPDFLoader(str(file_path))
-    pages: List[Document] = loader.load()
+    try:
+        loader = PyPDFLoader(str(file_path))
+        pages: List[Document] = loader.load()
+    except Exception as exc:  # pypdf raises a variety of internal error types
+        # for malformed structure, unsupported encryption, etc. — normalize
+        # all of them into one DocuRAG-specific, user-facing exception.
+        raise CorruptedPDFError(
+            f"{file_path.name} could not be parsed as a valid PDF "
+            f"(it may be corrupted or password-protected): {exc}"
+        ) from exc
 
     if not pages:
-        raise ValueError(f"No pages could be extracted from {file_path.name}")
+        raise CorruptedPDFError(f"No pages could be extracted from {file_path.name}")
 
     doc_id = str(uuid.uuid4())
 
@@ -110,14 +126,18 @@ def load_single_pdf(file_path: Path) -> List[Document]:
         page.metadata["page_number"] = raw_page_number + 1  # normalized, 1-indexed
         page.metadata["page_raw"] = raw_page_number
 
-        if not page.page_content or not page.page_content.strip():
+    if all(not page.page_content.strip() for page in pages):
+        raise NoExtractableTextError(
+            f"{file_path.name} parsed successfully but no text could be "
+            f"extracted from any of its {len(pages)} page(s) — it is likely "
+            f"a scanned/image-only PDF. DocuRAG does not perform OCR."
+        )
+
+    for page in pages:
+        if not page.page_content.strip():
             logger.warning(
-                "Empty text extracted from %s, page %d — likely a scanned/"
-                "image-only page. OCR would be needed to extract this text; "
-                "that's out of scope for Phase 2, so this page is kept with "
-                "empty content rather than dropped.",
-                file_path.name,
-                raw_page_number + 1,
+                "Empty text on %s page %d — likely a scanned/image-only page.",
+                file_path.name, page.metadata["page_number"],
             )
 
     return pages
@@ -125,11 +145,9 @@ def load_single_pdf(file_path: Path) -> List[Document]:
 
 def load_pdfs_from_directory(directory: Path) -> IngestionResult:
     """
-    Load every supported PDF in `directory` (non-recursive).
-
-    A single bad file (corrupted, encrypted, wrong extension) is logged and
-    skipped rather than raising and stopping the whole batch — ingestion of
-    N documents should not fail entirely because document 7 is broken.
+    Load every supported PDF in `directory` (non-recursive). A single bad
+    file is logged and skipped rather than raising and stopping the whole
+    batch.
     """
     if not directory.exists():
         raise FileNotFoundError(f"Directory does not exist: {directory}")
@@ -144,10 +162,13 @@ def load_pdfs_from_directory(directory: Path) -> IngestionResult:
     for pdf_path in pdf_paths:
         try:
             pages = load_single_pdf(pdf_path)
-        except Exception as exc:  # noqa: BLE001 — intentionally broad on purpose:
-            # ANY failure for one file (corrupted PDF, encrypted PDF, permission
-            # error, etc.) must not crash ingestion of the other files.
+        except PDFLoadError as exc:
             logger.error("Skipping %s — %s", pdf_path.name, exc)
+            result.skipped_files.append((pdf_path.name, str(exc)))
+            continue
+        except Exception as exc:  # noqa: BLE001 — last-resort catch-all so one
+            # unexpected failure never crashes ingestion of the other files.
+            logger.error("Skipping %s — unexpected error: %s", pdf_path.name, exc)
             result.skipped_files.append((pdf_path.name, str(exc)))
             continue
 
@@ -163,18 +184,7 @@ def load_pdfs_from_directory(directory: Path) -> IngestionResult:
 
 
 if __name__ == "__main__":
-    # Debug entry point. Run from the project root with:
-    #   python -m src.ingestion.pdf_loader
     from config import UPLOAD_DIR
 
     result = load_pdfs_from_directory(UPLOAD_DIR)
     print("\n" + result.summary())
-
-    if result.documents:
-        first = result.documents[0]
-        print("\n--- Preview of the first Document object ---")
-        print("metadata:", first.metadata)
-        print("page_content (first 300 chars):")
-        print(first.page_content[:300])
-    else:
-        print("\nNo documents were loaded — check the warnings above.")

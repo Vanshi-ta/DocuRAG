@@ -1,13 +1,8 @@
 """
-Embedding module for DocuRAG — Phase 4.
+Embedding module for DocuRAG.
 
-Responsible ONLY for:
-    - loading a local Sentence Transformers model ONCE
-    - converting chunk text (or a query string) into vectors
-
-No FAISS, no metadata management, no persistence — this module's entire
-job is text -> vector. Everything downstream (FAISS storage, retrieval)
-depends on this module producing vectors in a consistent, known dimension.
+Responsible ONLY for loading a local Sentence Transformers model once and
+converting text into vectors. No FAISS, no metadata management here.
 """
 
 from __future__ import annotations
@@ -21,27 +16,18 @@ from sentence_transformers import SentenceTransformer
 from config import EMBEDDING_MODEL_NAME
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 
 
 class Embedder:
     """
-    Thin wrapper around a SentenceTransformer model.
-
-    IMPORTANT: construct ONE Embedder and reuse it for every chunk and every
-    query in a run. Loading a model reads its weights from disk into memory
-    and is relatively expensive (tens to hundreds of milliseconds); doing
-    that once per query instead of once per session would make every single
-    question slow for no benefit — see Phase 4 guide Section 19.
+    Thin wrapper around a SentenceTransformer model. Construct ONE Embedder
+    and reuse it for every chunk and every query in a run — loading model
+    weights from disk is relatively expensive and should happen once per
+    process, not once per query.
     """
 
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME):
-        logger.info(
-            "Loading embedding model '%s' (first run downloads it once, "
-            "then it's cached locally)...",
-            model_name,
-        )
+        logger.info("Loading embedding model '%s'...", model_name)
         self.model = SentenceTransformer(model_name)
         self.model_name = model_name
         self.embedding_dimension: int = self.model.get_sentence_embedding_dimension()
@@ -49,14 +35,8 @@ class Embedder:
 
     def embed_texts(self, texts: List[str]) -> np.ndarray:
         """
-        Embed a list of strings. Returns a (N, D) float32 numpy array.
-
-        normalize_embeddings=True L2-normalizes every vector (length 1) at
-        embedding time. Combined with FAISS's inner-product index
-        (IndexFlatIP), this makes inner product mathematically equivalent
-        to cosine similarity — see Phase 4 guide Section 8. We also cast to
-        float32 explicitly because FAISS requires it and NumPy/PyTorch
-        sometimes default to float64.
+        Embed a list of strings into a (N, D) float32 array, L2-normalized
+        so FAISS inner-product search behaves as cosine similarity.
         """
         if not texts:
             return np.empty((0, self.embedding_dimension), dtype="float32")

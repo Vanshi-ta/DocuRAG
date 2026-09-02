@@ -1,10 +1,8 @@
 """
-LLM client module for DocuRAG — Phase 6.
+LLM client module for DocuRAG.
 
 Responsible ONLY for sending a fully-built prompt string to a local Ollama
-model and returning its generated text. No prompt construction, no
-retrieval logic lives here — this module's only job is "send prompt
-string, get response string back," talking to Ollama's local REST API.
+model and returning its generated text.
 """
 
 from __future__ import annotations
@@ -21,17 +19,12 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 
 
 class OllamaClient:
     """
-    Thin wrapper around Ollama's local REST API (http://localhost:11434 by
-    default). Ollama must already be running — on Windows it runs as a
-    background service that starts automatically after installation — and
-    the target model must already be pulled (`ollama pull <model>`); see
-    Phase 6 guide Sections 3-4.
+    Thin wrapper around Ollama's local REST API. Ollama must already be
+    running and the target model already pulled (`ollama pull <model>`).
     """
 
     def __init__(
@@ -45,17 +38,6 @@ class OllamaClient:
         self.temperature = temperature
 
     def generate(self, prompt: str) -> str:
-        """
-        Send `prompt` to the local Ollama model and return its full
-        generated text.
-
-        Uses Ollama's /api/generate endpoint with stream=False — we wait
-        for the complete response rather than handling a token-by-token
-        stream. That keeps this module simple (one request, one response)
-        at the cost of not showing partial output while the model is still
-        generating; acceptable for this phase, and easy to swap to
-        streaming later without touching any other module.
-        """
         url = f"{self.base_url}/api/generate"
         payload = {
             "model": self.model,
@@ -70,15 +52,19 @@ class OllamaClient:
         except requests.exceptions.ConnectionError as exc:
             raise ConnectionError(
                 f"Could not reach Ollama at {self.base_url}. Is Ollama running? "
-                f"On Windows it should start automatically after installation — "
-                f"try running `ollama list` in a terminal to check, or "
-                f"`ollama serve` to start it manually."
+                f"Try `ollama list` in a terminal to check, or `ollama serve` "
+                f"to start it manually."
             ) from exc
         except requests.exceptions.Timeout as exc:
             raise TimeoutError(
                 f"Ollama did not respond within {LLM_REQUEST_TIMEOUT_SECONDS}s. "
-                f"The model may still be loading into memory on first use, or "
-                f"your machine may be under heavy load — try again."
+                f"The model may still be loading on first use, or your machine "
+                f"may be under heavy load — try again."
+            ) from exc
+        except requests.exceptions.HTTPError as exc:
+            raise ConnectionError(
+                f"Ollama returned an error ({response.status_code}). "
+                f"Is model '{self.model}' pulled? Try `ollama pull {self.model}`."
             ) from exc
 
         data = response.json()

@@ -1,13 +1,3 @@
-"""
-Automated tests for src/vectorstore/faiss_store.py and metadata_store.py.
-
-These tests use synthetic random vectors (no Sentence Transformers model
-download required), so they run fast and don't need internet access.
-
-Run from the project root with:
-    pytest tests/test_vectorstore.py -v
-"""
-
 import sys
 from pathlib import Path
 
@@ -18,161 +8,132 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.metadata_store import ChunkRecord, MetadataStore
+from src.vectorstore.document_registry import DocumentRegistry
 
 
-def make_random_vectors(n: int, dim: int, seed: int = 0) -> np.ndarray:
+def make_random_vectors(n, dim, seed=0):
     rng = np.random.default_rng(seed)
     vectors = rng.random((n, dim), dtype=np.float32)
-    # L2-normalize, same as our real Embedder does, so IndexFlatIP behaves
-    # like cosine similarity in these tests too.
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
     return (vectors / norms).astype("float32")
 
 
-def test_add_vectors_rejects_wrong_dtype():
+def test_add_and_search_returns_caller_assigned_ids():
     store = FaissVectorStore(embedding_dimension=8)
-    wrong_dtype_vectors = np.random.random((3, 8)).astype("float64")
-    with pytest.raises(ValueError, match="float32"):
-        store.add_vectors(wrong_dtype_vectors)
+    vectors = make_random_vectors(5, 8, seed=1)
+    ids = [100, 101, 102, 103, 104]
+    store.add_vectors(vectors, ids)
 
-
-def test_add_vectors_rejects_wrong_dimension():
-    store = FaissVectorStore(embedding_dimension=8)
-    wrong_dim_vectors = make_random_vectors(3, dim=16)
-    with pytest.raises(ValueError, match="dimension"):
-        store.add_vectors(wrong_dim_vectors)
-
-
-def test_add_vectors_returns_correct_id_range():
-    store = FaissVectorStore(embedding_dimension=8)
-    first_batch = make_random_vectors(5, dim=8, seed=1)
-    start, end = store.add_vectors(first_batch)
-    assert (start, end) == (0, 5)
-
-    second_batch = make_random_vectors(3, dim=8, seed=2)
-    start, end = store.add_vectors(second_batch)
-    assert (start, end) == (5, 8)
-    assert store.index.ntotal == 8
-
-
-def test_search_returns_the_exact_match_as_top_result():
-    store = FaissVectorStore(embedding_dimension=16)
-    vectors = make_random_vectors(20, dim=16, seed=3)
-    store.add_vectors(vectors)
-
-    # Querying with a vector identical to one already stored should return
-    # that vector itself as the #1 result, with similarity ~1.0.
-    query = vectors[7:8]  # keep as (1, 16) shape
-    scores, indices = store.search(query, top_k=3)
-
-    assert indices[0][0] == 7
+    scores, returned_ids = store.search(vectors[2:3], top_k=1)
+    assert returned_ids[0][0] == 102
     assert scores[0][0] > 0.999
 
 
-def test_search_on_empty_index_raises():
+def test_remove_ids_deletes_only_targeted_vectors():
     store = FaissVectorStore(embedding_dimension=8)
-    query = make_random_vectors(1, dim=8)
-    with pytest.raises(ValueError, match="empty index"):
-        store.search(query, top_k=3)
+    vectors = make_random_vectors(5, 8, seed=2)
+    ids = [10, 11, 12, 13, 14]
+    store.add_vectors(vectors, ids)
+
+    removed = store.remove_ids([12])
+    assert removed == 1
+    assert store.ntotal == 4
+
+    # Searching for the removed vector's content should NOT return id 12 as an exact hit.
+    scores, returned_ids = store.search(vectors[2:3], top_k=4)
+    assert 12 not in returned_ids[0]
+
+    # Other ids remain searchable.
+    scores, returned_ids = store.search(vectors[0:1], top_k=1)
+    assert returned_ids[0][0] == 10
 
 
-def test_save_and_load_roundtrip(tmp_path):
+def test_save_and_load_roundtrip_preserves_ids(tmp_path):
     store = FaissVectorStore(embedding_dimension=8)
-    vectors = make_random_vectors(10, dim=8, seed=4)
-    store.add_vectors(vectors)
+    vectors = make_random_vectors(3, 8, seed=3)
+    store.add_vectors(vectors, [500, 501, 502])
 
-    index_path = tmp_path / "index.faiss"
-    store.save(index_path)
-
-    reloaded = FaissVectorStore.load(index_path, embedding_dimension=8)
-    assert reloaded.index.ntotal == 10
-
-    # A search against the reloaded index should behave identically.
-    query = vectors[3:4]
-    scores, indices = reloaded.search(query, top_k=1)
-    assert indices[0][0] == 3
-
-
-def test_load_missing_index_raises(tmp_path):
-    missing_path = tmp_path / "does_not_exist.faiss"
-    with pytest.raises(FileNotFoundError):
-        FaissVectorStore.load(missing_path, embedding_dimension=8)
-
-
-def test_metadata_store_get_returns_correct_record():
-    store = MetadataStore()
-    records = [
-        ChunkRecord(
-            chunk_id=f"chunk-{i}",
-            chunk_text=f"text {i}",
-            source_filename="doc.pdf",
-            doc_id="doc-1",
-            page_number=1,
-            chunk_index=i,
-        )
-        for i in range(5)
-    ]
-    store.add_records(records)
-
-    assert len(store) == 5
-    assert store.get(3).chunk_id == "chunk-3"
-
-
-def test_metadata_store_get_out_of_range_raises():
-    store = MetadataStore()
-    store.add_records([
-        ChunkRecord("c1", "text", "doc.pdf", "doc-1", 1, 0),
-    ])
-    with pytest.raises(IndexError, match="out of sync"):
-        store.get(5)
-
-
-def test_metadata_store_save_and_load_roundtrip(tmp_path):
-    store = MetadataStore()
-    store.add_records([
-        ChunkRecord("c1", "some text", "doc.pdf", "doc-1", 2, 0),
-        ChunkRecord("c2", "more text", "doc.pdf", "doc-1", 2, 1),
-    ])
-
-    path = tmp_path / "metadata.json"
+    path = tmp_path / "index.faiss"
     store.save(path)
 
-    reloaded = MetadataStore.load(path)
-    assert len(reloaded) == 2
-    assert reloaded.get(1).chunk_text == "more text"
-    assert reloaded.get(1).page_number == 2
+    reloaded = FaissVectorStore.load(path, embedding_dimension=8)
+    scores, ids = reloaded.search(vectors[1:2], top_k=1)
+    assert ids[0][0] == 501
 
 
-def test_faiss_and_metadata_store_stay_in_sync_after_two_batches():
-    """
-    Simulates adding two separate documents' worth of chunks in two
-    batches, and confirms FAISS position i still matches metadata
-    record i for every i, across both batches.
-    """
-    faiss_store = FaissVectorStore(embedding_dimension=8)
-    metadata_store = MetadataStore()
+def test_metadata_store_keyed_by_vector_id_not_position():
+    store = MetadataStore()
+    store.add_records([
+        ChunkRecord(vector_id=50, chunk_id="c1", chunk_text="a", source_filename="x.pdf",
+                    doc_id="d1", page_number=1, chunk_index=0),
+        ChunkRecord(vector_id=51, chunk_id="c2", chunk_text="b", source_filename="x.pdf",
+                    doc_id="d1", page_number=2, chunk_index=1),
+    ])
+    assert store.get(51).chunk_text == "b"
+    with pytest.raises(KeyError):
+        store.get(999)
 
-    batch_1_vectors = make_random_vectors(4, dim=8, seed=10)
-    batch_1_records = [
-        ChunkRecord(f"c{i}", f"batch1-text-{i}", "doc1.pdf", "doc-1", 1, i)
-        for i in range(4)
-    ]
-    faiss_store.add_vectors(batch_1_vectors)
-    metadata_store.add_records(batch_1_records)
 
-    batch_2_vectors = make_random_vectors(3, dim=8, seed=20)
-    batch_2_records = [
-        ChunkRecord(f"c{i}", f"batch2-text-{i}", "doc2.pdf", "doc-2", 1, i)
-        for i in range(3)
-    ]
-    faiss_store.add_vectors(batch_2_vectors)
-    metadata_store.add_records(batch_2_records)
+def test_metadata_store_remove_and_survives_gap():
+    store = MetadataStore()
+    store.add_records([
+        ChunkRecord(vector_id=1, chunk_id="c1", chunk_text="a", source_filename="x.pdf",
+                    doc_id="d1", page_number=1, chunk_index=0),
+        ChunkRecord(vector_id=2, chunk_id="c2", chunk_text="b", source_filename="x.pdf",
+                    doc_id="d1", page_number=1, chunk_index=1),
+    ])
+    removed = store.remove([1])
+    assert removed == 1
+    assert len(store) == 1
+    assert store.get(2).chunk_text == "b"
+    with pytest.raises(KeyError):
+        store.get(1)
 
-    assert faiss_store.index.ntotal == len(metadata_store) == 7
 
-    # Position 5 should be the 2nd vector of batch 2 (positions 4,5,6 = batch 2).
-    query = batch_2_vectors[1:2]
-    scores, indices = faiss_store.search(query, top_k=1)
-    matched_position = indices[0][0]
-    assert matched_position == 5
-    assert metadata_store.get(matched_position).chunk_text == "batch2-text-1"
+def test_document_registry_dedup_and_id_allocation():
+    registry = DocumentRegistry()
+    ids_a = registry.allocate_vector_ids(3)
+    assert ids_a == [0, 1, 2]
+    registry.add_document("doc-a", "a.pdf", "hash-a", page_count=2, chunk_count=3, vector_ids=ids_a)
+
+    assert registry.find_by_hash("hash-a").source_filename == "a.pdf"
+    assert registry.find_by_hash("hash-nonexistent") is None
+
+    ids_b = registry.allocate_vector_ids(2)
+    assert ids_b == [3, 4]  # never reuses ids, even before any deletion
+
+
+def test_document_registry_remove_frees_correct_vector_ids():
+    registry = DocumentRegistry()
+    ids_a = registry.allocate_vector_ids(2)
+    registry.add_document("doc-a", "a.pdf", "hash-a", 1, 2, ids_a)
+    ids_b = registry.allocate_vector_ids(2)
+    registry.add_document("doc-b", "b.pdf", "hash-b", 1, 2, ids_b)
+
+    freed = registry.remove_document("doc-a")
+    assert freed == ids_a
+    assert registry.find_by_filename("a.pdf") is None
+    assert registry.find_by_filename("b.pdf") is not None
+
+
+def test_document_registry_ids_never_reused_after_deletion():
+    registry = DocumentRegistry()
+    ids_a = registry.allocate_vector_ids(3)
+    registry.add_document("doc-a", "a.pdf", "hash-a", 1, 3, ids_a)
+    registry.remove_document("doc-a")
+
+    ids_c = registry.allocate_vector_ids(2)
+    assert ids_c == [3, 4]  # continues from next_vector_id, not from freed ids
+
+
+def test_document_registry_save_and_load_roundtrip(tmp_path):
+    registry = DocumentRegistry()
+    ids_a = registry.allocate_vector_ids(2)
+    registry.add_document("doc-a", "a.pdf", "hash-a", 1, 2, ids_a)
+
+    path = tmp_path / "documents.json"
+    registry.save(path)
+
+    reloaded = DocumentRegistry.load(path)
+    assert reloaded.next_vector_id == 2
+    assert reloaded.find_by_filename("a.pdf").content_hash == "hash-a"

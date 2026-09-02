@@ -1,15 +1,14 @@
 """
-Metadata store module for DocuRAG — Phase 4.
+Metadata store module for DocuRAG.
 
-FAISS returns only integer positions when you search it — it never gives
-you back text or metadata. This module keeps an ORDERED list of metadata
-records, one per vector, such that FAISS position `i` always corresponds to
-`MetadataStore.records[i]`. This ordered-list mapping is the entire
-mechanism that turns "FAISS found vector #42" into "that means chunk 42 of
-handbook.pdf, page 7." There is no cleverness beyond keeping the two lists
-in the same order — which is exactly why it's critical that vectors and
-records are always added together, from the same ordered list of chunks
-(see index_builder.py).
+FAISS (via IndexIDMap2) returns caller-assigned int64 vector IDs from a
+search — never text. This module keeps a dict of {vector_id: ChunkRecord}
+so a search hit turns into "that means chunk X of handbook.pdf, page 7."
+
+Keyed by ID rather than position (as an earlier version of this module was)
+specifically because IDs are stable across deletions — removing document A's
+three chunks does not renumber document B's chunks, so no desync is
+possible.
 """
 
 from __future__ import annotations
@@ -18,22 +17,16 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List
+from typing import Dict, Iterable, List
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 
 
 @dataclass
 class ChunkRecord:
-    """
-    One metadata record, corresponding 1:1 with one vector at the same
-    position in the FAISS index. Every field here is something a later
-    phase (retrieval, source citation) needs and cannot get from FAISS
-    itself.
-    """
+    """One metadata record, keyed by its vector_id (the same ID used in FAISS)."""
 
+    vector_id: int
     chunk_id: str
     chunk_text: str
     source_filename: str
@@ -44,26 +37,29 @@ class ChunkRecord:
 
 class MetadataStore:
     def __init__(self):
-        self.records: List[ChunkRecord] = []
+        self.records: Dict[int, ChunkRecord] = {}
 
-    def add_records(self, records: List[ChunkRecord]) -> None:
-        """
-        Append records. MUST be called with records in the exact same order
-        their corresponding vectors were added to FAISS in the same call —
-        position i here must always describe FAISS vector i.
-        """
-        self.records.extend(records)
+    def add_records(self, records: Iterable[ChunkRecord]) -> None:
+        for record in records:
+            self.records[record.vector_id] = record
 
-    def get(self, faiss_index: int) -> ChunkRecord:
-        """Look up the metadata record for a given FAISS position."""
-        if faiss_index < 0 or faiss_index >= len(self.records):
-            raise IndexError(
-                f"FAISS index {faiss_index} out of range for metadata store "
-                f"of size {len(self.records)} — this means the FAISS index "
-                f"and metadata store have gone out of sync, which should "
-                f"never happen if they were built and saved together."
+    def remove(self, vector_ids: Iterable[int]) -> int:
+        """Remove records for the given vector IDs. Returns count removed."""
+        removed = 0
+        for vid in vector_ids:
+            if vid in self.records:
+                del self.records[vid]
+                removed += 1
+        return removed
+
+    def get(self, vector_id: int) -> ChunkRecord:
+        if vector_id not in self.records:
+            raise KeyError(
+                f"vector_id {vector_id} not found in metadata store "
+                f"(size {len(self.records)}) — this means the FAISS index "
+                f"and metadata store have gone out of sync."
             )
-        return self.records[faiss_index]
+        return self.records[vector_id]
 
     def __len__(self) -> int:
         return len(self.records)
@@ -71,7 +67,7 @@ class MetadataStore:
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump([asdict(r) for r in self.records], f, ensure_ascii=False, indent=2)
+            json.dump([asdict(r) for r in self.records.values()], f, ensure_ascii=False, indent=2)
         logger.info("Saved %d metadata records to %s", len(self.records), path)
 
     @classmethod
@@ -81,6 +77,6 @@ class MetadataStore:
         store = cls()
         with open(path, "r", encoding="utf-8") as f:
             raw_records = json.load(f)
-        store.records = [ChunkRecord(**r) for r in raw_records]
+        store.records = {r["vector_id"]: ChunkRecord(**r) for r in raw_records}
         logger.info("Loaded %d metadata records from %s", len(store.records), path)
         return store

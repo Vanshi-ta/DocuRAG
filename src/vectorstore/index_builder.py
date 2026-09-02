@@ -1,54 +1,52 @@
 """
-Index builder for DocuRAG — Phase 4.
+Index builder for DocuRAG.
 
-This is the ONLY module that knows about all three pieces: chunk Documents,
-the Embedder, and the FaissVectorStore + MetadataStore pair. Each of those
-stays independently reusable and testable; this module wires them together
-in the correct order — same orchestration pattern as pipeline.py wiring
-ingestion + chunking together in Phase 3.
+The only module that knows about all four pieces: chunk Documents, the
+Embedder, FaissVectorStore, and MetadataStore. It allocates vector IDs from
+the DocumentRegistry, embeds the chunks, and adds them to FAISS and the
+metadata store under those same IDs — the ordering/ID-matching guarantee
+every downstream lookup depends on.
 """
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List
 
 from langchain_core.documents import Document
 
-from src.ingestion.embedder import Embedder
+from src.vectorstore.document_registry import DocumentRegistry
 from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.metadata_store import ChunkRecord, MetadataStore
 
+if TYPE_CHECKING:  # pragma: no cover
+    from src.ingestion.embedder import Embedder
 
-def build_vector_index(
+
+def add_chunks_to_index(
     chunks: List[Document],
-    embedder: Embedder,
-) -> Tuple[FaissVectorStore, MetadataStore]:
+    embedder: "Embedder",
+    faiss_store: FaissVectorStore,
+    metadata_store: MetadataStore,
+    registry: DocumentRegistry,
+) -> List[int]:
     """
-    Embed every chunk and store the resulting vectors in FAISS, with a
-    parallel MetadataStore so each vector's FAISS position maps back to its
-    source chunk's text and metadata.
-
-    The ordering guarantee this function relies on: `texts` is built from
-    `chunks` in order, `embedder.embed_texts(texts)` preserves that order,
-    `faiss_store.add_vectors(vectors)` adds them to FAISS in that same
-    order, and `records` is built from that same `chunks` list in that same
-    order. As long as nothing reorders any of these lists independently,
-    FAISS position i and metadata_store.records[i] always describe the same
-    chunk.
+    Embed `chunks` and add them to faiss_store/metadata_store under newly
+    allocated vector IDs. Returns the list of vector IDs used, so the
+    caller can register them against a DocumentEntry.
     """
-    faiss_store = FaissVectorStore(embedder.embedding_dimension)
-    metadata_store = MetadataStore()
-
     if not chunks:
-        return faiss_store, metadata_store
+        return []
+
+    vector_ids = registry.allocate_vector_ids(len(chunks))
 
     texts = [chunk.page_content for chunk in chunks]
     vectors = embedder.embed_texts(texts)
 
-    faiss_store.add_vectors(vectors)
+    faiss_store.add_vectors(vectors, vector_ids)
 
     records = [
         ChunkRecord(
+            vector_id=vid,
             chunk_id=chunk.metadata["chunk_id"],
             chunk_text=chunk.page_content,
             source_filename=chunk.metadata["source_filename"],
@@ -56,18 +54,14 @@ def build_vector_index(
             page_number=chunk.metadata["page_number"],
             chunk_index=chunk.metadata["chunk_index"],
         )
-        for chunk in chunks
+        for vid, chunk in zip(vector_ids, chunks)
     ]
     metadata_store.add_records(records)
 
-    # Defensive check: if these two ever drift apart in size, every later
-    # lookup silently returns the WRONG chunk's metadata for a given FAISS
-    # match — a bug you'd only notice by manually spot-checking answers.
-    # Fail loudly here instead, immediately after building the index.
-    assert len(metadata_store) == faiss_store.index.ntotal, (
+    assert faiss_store.ntotal == len(metadata_store), (
         "FAISS index and metadata store are out of sync in size — "
-        "this should never happen if add_vectors and add_records are "
-        "always called together with the same ordered list of chunks."
+        "this should never happen if add_chunks_to_index is the only "
+        "path used to add vectors."
     )
 
-    return faiss_store, metadata_store
+    return vector_ids

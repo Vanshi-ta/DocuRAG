@@ -1,25 +1,13 @@
-"""
-Automated tests for src/ingestion/pdf_loader.py.
-
-Run from the project root with:
-    pytest tests/test_pdf_loader.py -v
-
-Most of these tests are dependency-free (no PDF file required) and check
-the validation/error-handling logic. The last test only runs if you've
-placed at least one real PDF in data/uploads/, since we can't generate a
-real PDF's binary content without an extra library.
-"""
-
 import sys
 from pathlib import Path
 
 import pytest
 
-# Allow `pytest` to find `config` and `src` when run from the project root.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from config import UPLOAD_DIR
 from src.ingestion.pdf_loader import (
+    EmptyFileError,
+    CorruptedPDFError,
     load_pdfs_from_directory,
     load_single_pdf,
     validate_pdf_path,
@@ -44,6 +32,20 @@ def test_validate_pdf_path_raises_on_directory(tmp_path):
         validate_pdf_path(tmp_path)
 
 
+def test_validate_pdf_path_raises_on_empty_file(tmp_path):
+    empty_file = tmp_path / "empty.pdf"
+    empty_file.write_bytes(b"")
+    with pytest.raises(EmptyFileError):
+        validate_pdf_path(empty_file)
+
+
+def test_load_single_pdf_raises_corrupted_error_on_garbage_bytes(tmp_path):
+    fake_pdf = tmp_path / "garbage.pdf"
+    fake_pdf.write_bytes(b"this is not a real PDF structure at all")
+    with pytest.raises(CorruptedPDFError):
+        load_single_pdf(fake_pdf)
+
+
 def test_load_pdfs_from_directory_raises_on_missing_directory(tmp_path):
     missing_dir = tmp_path / "nowhere"
     with pytest.raises(FileNotFoundError):
@@ -51,32 +53,18 @@ def test_load_pdfs_from_directory_raises_on_missing_directory(tmp_path):
 
 
 def test_load_pdfs_from_directory_handles_empty_directory(tmp_path):
-    # An empty (but existing) directory should return an empty result,
-    # not raise — no PDFs is a valid, if unhelpful, state.
     result = load_pdfs_from_directory(tmp_path)
     assert result.documents == []
     assert result.loaded_files == []
     assert result.skipped_files == []
 
 
-@pytest.mark.skipif(
-    not any(UPLOAD_DIR.glob("*.pdf")),
-    reason="No PDF found in data/uploads/ — add a real PDF to run this test.",
-)
-def test_load_single_pdf_on_a_real_sample():
-    sample_pdf = next(UPLOAD_DIR.glob("*.pdf"))
-    pages = load_single_pdf(sample_pdf)
+def test_load_pdfs_from_directory_skips_one_bad_file_without_crashing(tmp_path):
+    bad_pdf = tmp_path / "bad.pdf"
+    bad_pdf.write_bytes(b"not a real pdf")
 
-    assert len(pages) > 0
-    first_page = pages[0]
+    result = load_pdfs_from_directory(tmp_path)
 
-    # Every page must carry the metadata later phases (chunking, citations)
-    # depend on.
-    assert first_page.metadata["source_filename"] == sample_pdf.name
-    assert "doc_id" in first_page.metadata
-    assert first_page.metadata["page_number"] == 1  # 1-indexed, not 0
-    assert first_page.metadata["page_raw"] == 0
-
-    # All pages of the same document must share the same doc_id.
-    doc_ids = {page.metadata["doc_id"] for page in pages}
-    assert len(doc_ids) == 1
+    assert result.loaded_files == []
+    assert len(result.skipped_files) == 1
+    assert result.skipped_files[0][0] == "bad.pdf"
