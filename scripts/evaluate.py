@@ -55,13 +55,13 @@ from typing import List, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from config import DEFAULT_TOP_K, SIMILARITY_THRESHOLD
+from config import CANDIDATE_POOL_SIZE, DEFAULT_TOP_K, MAX_CHUNKS_PER_SOURCE, SIMILARITY_THRESHOLD
 from src.generation.llm_client import OllamaClient
 from src.generation.rag_engine import answer_question
 from src.ingestion.embedder import Embedder
 from src.logging_config import configure_logging
 from src.pipeline import load_vector_store
-from src.retrieval.retriever import Retriever
+from src.retrieval.retriever import Retriever, retrieve_for_question
 
 DEFAULT_DATASET_PATH = Path(__file__).resolve().parents[1] / "data" / "eval" / "eval_dataset.json"
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parents[1] / "eval_results"
@@ -97,11 +97,18 @@ def evaluate_question(question_entry: dict, retriever: Retriever, max_k: int) ->
     qtype = question_entry["type"]
     ground_truth = question_entry.get("relevant_sources", [])
 
-    # Retrieve without threshold filtering here — we need the raw ranked
-    # list to compute hit@k at every k value, and to inspect the top score
-    # for the rejection-rate check independent of the app's live threshold
-    # setting.
-    chunks = retriever.retrieve(question_text, top_k=max_k, similarity_threshold=None)
+    # Uses the SAME retrieval strategy the app uses to answer questions
+    # (two-stage diversity selection + entity fan-out for multi-entity
+    # questions) — not the plain single-stage baseline — so these metrics
+    # reflect what users actually experience. similarity_threshold=None
+    # here so we get the full ranked candidate list to compute hit@k at
+    # every k value; the rejection-rate check below applies the threshold
+    # itself, independent of the live app setting.
+    chunks = retrieve_for_question(
+        question_text, retriever, top_k=max_k,
+        candidate_pool_size=CANDIDATE_POOL_SIZE, max_chunks_per_source=MAX_CHUNKS_PER_SOURCE,
+        similarity_threshold=None,
+    )
     retrieved = [(c.source_filename, c.page_number, c.similarity_score) for c in chunks]
 
     hit_at_k = {}

@@ -61,9 +61,34 @@ CHUNK_OVERLAP = _env_int("CHUNK_OVERLAP", 150)
 EMBEDDING_MODEL_NAME = _env_str("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 # --- Retrieval ------------------------------------------------------------
-# DEFAULT_TOP_K: how many chunks to retrieve per question by default.
-DEFAULT_TOP_K = _env_int("DEFAULT_TOP_K", 4)
+# DEFAULT_TOP_K: how many chunks are ultimately handed to the LLM.
+# Raised from 4 -> 6 in this phase: with MAX_CHUNKS_PER_SOURCE=2 below, 6
+# slots guarantee room for at least 3 distinct documents' chunks in a
+# multi-document question, instead of one document being able to fill
+# every slot. See docs/RETRIEVAL.md for the reasoning and before/after
+# test results.
+DEFAULT_TOP_K = _env_int("DEFAULT_TOP_K", 6)
 MAX_TOP_K = _env_int("MAX_TOP_K", 10)
+
+# CANDIDATE_POOL_SIZE: how many candidates FAISS returns BEFORE diversity
+# selection narrows them down to DEFAULT_TOP_K. Must be >= DEFAULT_TOP_K.
+# A larger pool gives the diversity step more to choose from (so a second
+# or third document's best chunk can be pulled in even if it wasn't in the
+# raw top-6), at the cost of a few extra vector comparisons — negligible
+# for a flat index at this project's scale.
+CANDIDATE_POOL_SIZE = _env_int("CANDIDATE_POOL_SIZE", 15)
+
+# MAX_CHUNKS_PER_SOURCE: hard cap on how many chunks from any single
+# source_filename can appear in the final selection. This is the direct
+# fix for one document dominating top-k on multi-document questions.
+MAX_CHUNKS_PER_SOURCE = _env_int("MAX_CHUNKS_PER_SOURCE", 2)
+
+# ENTITY_FANOUT_ENABLED: when a question mentions 2+ capitalized
+# entities (e.g. "Vanshita" and "Manas"), run one sub-retrieval per
+# entity and merge results, instead of a single query embedding that can
+# semantically drift toward whichever entity's wording is closer to the
+# rest of the question. See src/retrieval/query_processing.py.
+ENTITY_FANOUT_ENABLED = _env_str("ENTITY_FANOUT_ENABLED", "true").lower() == "true"
 
 # SIMILARITY_THRESHOLD: minimum cosine similarity (inner product on
 # normalized vectors, range ~[-1, 1]) for a retrieved chunk to be treated

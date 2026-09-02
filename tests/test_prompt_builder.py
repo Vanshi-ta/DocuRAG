@@ -19,8 +19,8 @@ def test_format_context_handles_empty_list():
 def test_format_context_labels_each_chunk_with_source_and_page():
     chunks = [make_chunk("Text A", "a.pdf", 1), make_chunk("Text B", "b.pdf", 5)]
     context = format_context(chunks)
-    assert "a.pdf" in context and "page 1" in context
-    assert "b.pdf" in context and "page 5" in context
+    assert "SOURCE: a.pdf" in context and "PAGE: 1" in context
+    assert "SOURCE: b.pdf" in context and "PAGE: 5" in context
 
 
 def test_build_prompt_includes_instructions_context_and_question():

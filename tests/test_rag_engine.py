@@ -12,7 +12,8 @@ class FakeRetriever:
         self._chunks = chunks
         self.last_call = None
 
-    def retrieve(self, question, top_k, similarity_threshold=None):
+    def retrieve_diverse(self, question, top_k, candidate_pool_size=None,
+                          max_chunks_per_source=None, similarity_threshold=None):
         self.last_call = (question, top_k, similarity_threshold)
         return self._chunks
 
