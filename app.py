@@ -23,6 +23,297 @@ configure_logging()
 
 st.set_page_config(page_title="DocuRAG", page_icon="📄", layout="wide")
 
+st.markdown(
+    """
+    <style>
+        :root {
+            --bg: #f4f1ec;
+            --bg-strong: #ecf3fa;
+            --panel: rgba(255, 255, 255, 0.82);
+            --panel-soft: rgba(248, 249, 252, 0.9);
+            --panel-strong: rgba(228, 239, 252, 0.9);
+            --border: rgba(153, 170, 188, 0.45);
+            --border-strong: rgba(103, 138, 182, 0.55);
+            --text: #1d2433;
+            --muted: #5f6d7a;
+            --primary: #2f5d8f;
+            --primary-strong: #234d7a;
+            --accent: #dfeefb;
+            --accent-strong: #b9d8f5;
+            --success: #2d8f6d;
+            --warning: #d38c1e;
+            --shadow: rgba(15, 23, 42, 0.08);
+        }
+
+        html[data-theme="dark"],
+        .theme-dark {
+            --bg: #0f1724;
+            --bg-strong: #111b2b;
+            --panel: rgba(19, 27, 38, 0.86);
+            --panel-soft: rgba(24, 34, 48, 0.9);
+            --panel-strong: rgba(27, 47, 67, 0.92);
+            --border: rgba(143, 163, 188, 0.28);
+            --border-strong: rgba(116, 160, 211, 0.45);
+            --text: #e5edf8;
+            --muted: #a7b7cc;
+            --primary: #7bb0e6;
+            --primary-strong: #9cc7f1;
+            --accent: rgba(86, 129, 177, 0.25);
+            --accent-strong: rgba(110, 165, 220, 0.34);
+            --success: #6bc4a0;
+            --warning: #f0ba60;
+            --shadow: rgba(3, 7, 18, 0.35);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0f1724;
+                --bg-strong: #111b2b;
+                --panel: rgba(19, 27, 38, 0.86);
+                --panel-soft: rgba(24, 34, 48, 0.9);
+                --panel-strong: rgba(27, 47, 67, 0.92);
+                --border: rgba(143, 163, 188, 0.28);
+                --border-strong: rgba(116, 160, 211, 0.45);
+                --text: #e5edf8;
+                --muted: #a7b7cc;
+                --primary: #7bb0e6;
+                --primary-strong: #9cc7f1;
+                --accent: rgba(86, 129, 177, 0.25);
+                --accent-strong: rgba(110, 165, 220, 0.34);
+                --success: #6bc4a0;
+                --warning: #f0ba60;
+                --shadow: rgba(3, 7, 18, 0.35);
+            }
+        }
+
+        .stApp {
+            background: linear-gradient(180deg, var(--bg) 0%, var(--bg-strong) 100%);
+            color: var(--text);
+        }
+
+        .block-container {
+            padding-top: 1.5rem;
+            padding-bottom: 2rem;
+            max-width: 1500px !important;
+        }
+
+        [data-testid="stSidebar"] {
+            background: rgba(255, 255, 255, 0.02);
+            border-right: 1px solid var(--border);
+        }
+
+        [data-testid="stSidebar"] > div {
+            background: var(--panel-soft);
+            border-right: 1px solid var(--border);
+        }
+
+        [data-testid="stSidebar"] .block-container {
+            padding-top: 1.25rem;
+            padding-left: 0.9rem;
+            padding-right: 0.9rem;
+        }
+
+        h1 {
+            color: var(--text);
+            letter-spacing: -0.04em;
+            margin-bottom: 0.2rem !important;
+        }
+
+        .stCaption {
+            color: var(--muted) !important;
+            font-size: 0.95rem !important;
+        }
+
+        .stButton > button {
+            border-radius: 10px;
+            border: 1px solid var(--border-strong);
+            background: linear-gradient(180deg, var(--panel-soft) 0%, var(--panel-strong) 100%);
+            color: var(--primary-strong);
+            font-weight: 600;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+
+        .stButton > button:hover {
+            border-color: var(--primary);
+            box-shadow: 0 8px 18px var(--shadow);
+            transform: translateY(-1px);
+        }
+
+        .stButton > button:focus {
+            box-shadow: 0 0 0 0.2rem rgba(47, 93, 143, 0.2);
+        }
+
+        .stFileUploader > div {
+            background: var(--panel-soft);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+        }
+
+        [data-testid="stChatMessage"] {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 1rem 1rem 0.85rem 1rem;
+            box-shadow: 0 4px 18px var(--shadow);
+            margin-bottom: 0.8rem;
+        }
+
+        [data-testid="stChatMessage"] .stMarkdown {
+            color: var(--text);
+        }
+
+        [data-testid="stChatMessage"] .stMarkdown p {
+            margin-top: 0;
+            margin-bottom: 0.25rem;
+        }
+
+        [data-testid="stChatMessage"] .stExpander {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--panel-soft);
+        }
+
+        .stAlert {
+            border-radius: 12px;
+            border: 1px solid rgba(47, 93, 143, 0.18);
+            background: var(--panel-strong);
+            color: var(--text);
+        }
+
+        .stTabs [role="tablist"] {
+            gap: 0.5rem;
+        }
+
+        .stTabs [role="tab"] {
+            color: var(--muted);
+            border-radius: 10px 10px 0 0;
+        }
+
+        .stTabs [role="tab"][aria-selected="true"] {
+            background: var(--panel);
+            color: var(--primary-strong);
+            border: 1px solid var(--border);
+            border-bottom: none;
+        }
+
+        .stChatInput {
+            border: 1px solid var(--border-strong);
+            border-radius: 16px;
+            background: var(--panel);
+            box-shadow: 0 8px 26px var(--shadow);
+        }
+
+        .research-shell {
+            margin-top: 0.25rem;
+        }
+
+        .source-panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 0.9rem 0.9rem 0.3rem 0.9rem;
+            box-shadow: 0 6px 22px var(--shadow);
+            position: sticky;
+            top: 1rem;
+        }
+
+        .source-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text);
+            font-weight: 700;
+            font-size: 0.9rem;
+            margin-bottom: 0.8rem;
+            letter-spacing: -0.02em;
+        }
+
+        .source-count {
+            font-size: 0.72rem;
+            color: var(--muted);
+            background: var(--panel-soft);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.2rem 0.5rem;
+        }
+
+        .source-item {
+            background: var(--panel-soft);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.75rem 0.75rem;
+            margin-bottom: 0.55rem;
+            color: var(--text);
+        }
+
+        .source-item strong {
+            color: var(--primary-strong);
+            font-weight: 700;
+        }
+
+        .source-meta {
+            margin-top: 0.35rem;
+            color: var(--muted);
+            font-size: 0.72rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .source-badge {
+            display: inline-flex;
+            align-items: center;
+            background: var(--accent);
+            color: var(--primary-strong);
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            padding: 0.2rem 0.5rem;
+            font-weight: 600;
+            font-size: 0.7rem;
+        }
+
+        .source-empty {
+            color: var(--muted);
+            background: var(--panel-soft);
+            border: 1px dashed var(--border-strong);
+            border-radius: 12px;
+            padding: 0.75rem;
+            line-height: 1.5;
+        }
+
+        textarea {
+            background: transparent !important;
+            color: var(--text) !important;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 14px;
+        }
+
+        .stSlider > div > div > div {
+            background: linear-gradient(90deg, var(--accent-strong) 0%, var(--primary) 100%);
+        }
+
+        .stCheckbox {
+            color: var(--text);
+        }
+
+        .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect {
+            background: var(--panel-soft);
+            color: var(--text);
+        }
+
+        .stDataFrame, .stTable {
+            border-radius: 12px;
+            overflow: hidden;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 # --- Cached resources -------------------------------------------------------
 @st.cache_resource
@@ -69,8 +360,8 @@ try_load_existing_index()
 
 
 # --- Header -------------------------------------------------------------
-st.title("📄 DocuRAG")
-st.caption("Domain-specific document Q&A — fully local, no paid APIs.")
+st.title("DocuRAG")
+st.caption("Local document research assistant for PDF collections")
 
 
 # --- Sidebar: upload, process, manage documents -----------------------
