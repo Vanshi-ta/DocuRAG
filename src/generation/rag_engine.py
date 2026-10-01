@@ -3,13 +3,18 @@ RAG answer engine for DocuRAG.
 
 The only module that knows about all three query-time pieces: retrieval
 strategy, prompt construction, and the LLM client.
+
+Two entry points share the same retrieval + prompt logic:
+  - `answer_question`        -> blocking, returns the full RAGAnswer (unchanged)
+  - `answer_question_stream` -> returns sources immediately and the answer as
+                                a token iterator, for a streaming UI
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 from config import (
     CANDIDATE_POOL_SIZE,
@@ -37,6 +42,41 @@ class RAGAnswer:
     answer: str
     sources: List[RetrievedChunk]
     used_llm: bool
+
+
+@dataclass
+class RAGStream:
+    """
+    Streaming counterpart of RAGAnswer. `sources` and `used_llm` are known
+    BEFORE generation starts, so a UI can render source cards while the
+    answer is still being written. `tokens` yields answer text fragments;
+    when `used_llm` is False it yields the standard "not found" message once.
+    """
+
+    question: str
+    sources: List[RetrievedChunk]
+    used_llm: bool
+    tokens: Iterator[str]
+
+
+def _retrieve(
+    question: str,
+    retriever: Retriever,
+    top_k: int,
+    candidate_pool_size: int,
+    max_chunks_per_source: int,
+    similarity_threshold: Optional[float],
+    entity_fanout_enabled: bool,
+) -> List[RetrievedChunk]:
+    return retrieve_for_question(
+        question,
+        retriever,
+        top_k=top_k,
+        candidate_pool_size=candidate_pool_size,
+        max_chunks_per_source=max_chunks_per_source,
+        similarity_threshold=similarity_threshold,
+        entity_fanout_enabled=entity_fanout_enabled,
+    )
 
 
 def answer_question(
@@ -67,14 +107,9 @@ def answer_question(
       3. otherwise, build a grounded prompt and call the LLM
       4. return the answer alongside the chunks it was grounded in
     """
-    retrieved_chunks = retrieve_for_question(
-        question,
-        retriever,
-        top_k=top_k,
-        candidate_pool_size=candidate_pool_size,
-        max_chunks_per_source=max_chunks_per_source,
-        similarity_threshold=similarity_threshold,
-        entity_fanout_enabled=entity_fanout_enabled,
+    retrieved_chunks = _retrieve(
+        question, retriever, top_k, candidate_pool_size,
+        max_chunks_per_source, similarity_threshold, entity_fanout_enabled,
     )
 
     if not retrieved_chunks:
@@ -91,3 +126,37 @@ def answer_question(
 
     return RAGAnswer(question=question, answer=answer_text, sources=retrieved_chunks, used_llm=True)
 
+
+def answer_question_stream(
+    question: str,
+    retriever: Retriever,
+    llm_client: OllamaClient,
+    top_k: int = DEFAULT_TOP_K,
+    candidate_pool_size: int = CANDIDATE_POOL_SIZE,
+    max_chunks_per_source: int = MAX_CHUNKS_PER_SOURCE,
+    similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
+    entity_fanout_enabled: bool = ENTITY_FANOUT_ENABLED,
+) -> RAGStream:
+    """
+    Same retrieval, same prompt, same "no relevant context" short-circuit as
+    `answer_question` — only the delivery differs. Retrieval runs eagerly;
+    the LLM request is opened eagerly too (so connection/model errors are
+    raised from this call), while the answer text arrives via `.tokens`.
+    """
+    retrieved_chunks = _retrieve(
+        question, retriever, top_k, candidate_pool_size,
+        max_chunks_per_source, similarity_threshold, entity_fanout_enabled,
+    )
+
+    if not retrieved_chunks:
+        logger.info("No chunks passed the relevance threshold for %r — skipping LLM call.", question)
+        return RAGStream(
+            question=question,
+            sources=[],
+            used_llm=False,
+            tokens=iter([NO_RELEVANT_CONTEXT_MESSAGE]),
+        )
+
+    prompt = build_prompt(question, retrieved_chunks)
+    tokens = llm_client.generate_stream(prompt)
+    return RAGStream(question=question, sources=retrieved_chunks, used_llm=True, tokens=tokens)

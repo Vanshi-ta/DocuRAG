@@ -1,4 +1,4 @@
-streamlit>=1.38,<2
+streamlit>=1.40,<2
 langchain-core>=0.3,<0.4
 langchain-community>=0.3,<0.4
 langchain-text-splitters>=0.3,<0.4

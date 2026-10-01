@@ -6,6 +6,11 @@ storage together, and the only module that knows about duplicate
 detection and document deletion/re-indexing. Each stage module (pdf_loader,
 text_splitter, embedder, faiss_store, metadata_store, document_registry)
 stays independently testable and swappable.
+
+UI-facing additions (all optional, backwards compatible):
+  - `paths=` lets a caller ingest specific files instead of scanning a folder
+  - `progress_callback=` reports per-file stages while ingestion runs
+  - `PipelineRunResult.file_results` gives one structured entry per file
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING, Callable, List, Optional, Sequence, Tuple
 
 from config import (
     CHUNK_OVERLAP,
@@ -36,6 +41,47 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# --- Per-file outcome / progress vocabulary ----------------------------------
+STATUS_INDEXED = "indexed"
+STATUS_REINDEXED = "reindexed"
+STATUS_SKIPPED_DUPLICATE = "skipped_duplicate"
+STATUS_FAILED = "failed"
+
+STAGE_HASHING = "hashing"
+STAGE_LOADING = "loading"
+STAGE_CHUNKING = "chunking"
+STAGE_EMBEDDING = "embedding"  # covers embed + FAISS add; one step, no finer hook
+
+
+@dataclass
+class FileResult:
+    """Outcome for one file in an ingestion run."""
+
+    filename: str
+    status: str  # one of the STATUS_* constants
+    chunks_added: int = 0
+    page_count: int = 0
+    error_type: Optional[str] = None  # e.g. "CorruptedPDFError" (failed files only)
+    error: Optional[str] = None
+
+
+@dataclass
+class IngestionProgress:
+    """
+    One progress event. While a file is being processed, `stage` is a STAGE_*
+    value. When a file finishes, `stage` is its final STATUS_* value, so a UI
+    can use a single field to drive a per-file status chip.
+    """
+
+    filename: str
+    file_index: int  # 1-based
+    total_files: int
+    stage: str
+    message: str = ""
+
+
+ProgressCallback = Callable[[IngestionProgress], None]
+
 
 @dataclass
 class PipelineRunResult:
@@ -46,6 +92,7 @@ class PipelineRunResult:
     reindexed_files: List[str] = field(default_factory=list)          # content changed
     failed_files: List[Tuple[str, str]] = field(default_factory=list)  # (filename, reason)
     total_chunks_added: int = 0
+    file_results: List[FileResult] = field(default_factory=list)       # one per file, in order
 
     def summary(self) -> str:
         lines = [
@@ -76,88 +123,136 @@ def _persist(faiss_store: FaissVectorStore, metadata_store: MetadataStore, regis
     registry.save(DOCUMENT_REGISTRY_PATH)
 
 
+def _emit(callback: Optional[ProgressCallback], event: IngestionProgress) -> None:
+    """Call the progress callback, but never let a UI bug abort ingestion."""
+    if callback is None:
+        return
+    try:
+        callback(event)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("progress_callback raised; ignoring so ingestion can continue")
+
+
 def run_full_ingestion_pipeline(
     directory: Path | None = None,
     chunk_size: int = CHUNK_SIZE,
     chunk_overlap: int = CHUNK_OVERLAP,
     embedder: Embedder | None = None,
     persist: bool = True,
+    paths: Optional[Sequence[Path]] = None,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> Tuple[PipelineRunResult, FaissVectorStore, MetadataStore, DocumentRegistry]:
     """
-    Ingest every PDF in `directory` into the persistent vector store,
-    per file:
+    Ingest PDFs into the persistent vector store — every PDF in `directory`
+    (default: UPLOAD_DIR), or exactly the files in `paths` when given —
+    handling each file as follows:
 
       1. Hash the file's raw bytes.
       2. If that hash is already registered under any filename -> skip
          (duplicate content, log it, do not re-embed).
-      3. If a document with the same *filename* is already registered but
+      3. Load and chunk the file. On failure, record it and move on; if it
+         was a changed version of an already-indexed file, the OLD indexed
+         version is left intact rather than lost.
+      4. If a document with the same *filename* is already registered but
          with a *different* hash -> the file changed; remove the old
-         document's vectors/metadata/registry entry first, then proceed
-         (clean re-indexing, not silent duplication or stale data).
-      4. Load, chunk, embed, and add the new/changed file to the index.
+         document's vectors/metadata/registry entry now (clean re-indexing,
+         not silent duplication or stale data).
+      5. Embed and add the new/changed file to the index.
 
-    Existing indexed documents not present in `directory` this run are left
-    untouched — this function only adds/updates, it never deletes based on
-    absence. Use `remove_document()` for explicit deletion.
+    Existing indexed documents not present in this run are left untouched —
+    this function only adds/updates, it never deletes based on absence. Use
+    `remove_document()` for explicit deletion.
     """
     if embedder is None:
-        embedder = Embedder()
-    if directory is None:
-        directory = UPLOAD_DIR
+        # Imported here (not at module top) so importing the pipeline stays
+        # cheap and testable without sentence-transformers installed.
+        from src.ingestion.embedder import Embedder as _Embedder
+
+        embedder = _Embedder()
 
     faiss_store, metadata_store, registry = _load_or_create_store(embedder.embedding_dimension)
     result = PipelineRunResult()
 
-    if not directory.exists():
-        raise FileNotFoundError(f"Directory does not exist: {directory}")
+    if paths is not None:
+        pdf_paths = [Path(p) for p in paths]
+    else:
+        if directory is None:
+            directory = UPLOAD_DIR
+        if not directory.exists():
+            raise FileNotFoundError(f"Directory does not exist: {directory}")
+        pdf_paths = sorted(directory.glob("*.pdf"))
 
-    pdf_paths = sorted(directory.glob("*.pdf"))
     if not pdf_paths:
-        logger.warning("No PDF files found in %s", directory)
+        logger.warning("No PDF files to ingest")
         return result, faiss_store, metadata_store, registry
 
-    for pdf_path in pdf_paths:
+    total = len(pdf_paths)
+
+    def progress(index: int, name: str, stage: str, message: str = "") -> None:
+        _emit(progress_callback, IngestionProgress(name, index, total, stage, message))
+
+    def fail(index: int, name: str, error_type: str, reason: str) -> None:
+        result.failed_files.append((name, reason))
+        result.file_results.append(
+            FileResult(filename=name, status=STATUS_FAILED, error_type=error_type, error=reason)
+        )
+        progress(index, name, STATUS_FAILED, reason)
+
+    for index, pdf_path in enumerate(pdf_paths, start=1):
+        name = pdf_path.name
+
+        progress(index, name, STAGE_HASHING)
         content_hash = compute_file_hash(pdf_path)
 
         existing_by_hash = registry.find_by_hash(content_hash)
         if existing_by_hash is not None:
             logger.info(
                 "Skipping '%s' — identical content already indexed as '%s'",
-                pdf_path.name, existing_by_hash.source_filename,
+                name, existing_by_hash.source_filename,
             )
-            result.skipped_duplicate_files.append(pdf_path.name)
+            result.skipped_duplicate_files.append(name)
+            result.file_results.append(
+                FileResult(
+                    filename=name,
+                    status=STATUS_SKIPPED_DUPLICATE,
+                    error=f"Identical content already indexed as '{existing_by_hash.source_filename}'.",
+                )
+            )
+            progress(index, name, STATUS_SKIPPED_DUPLICATE, existing_by_hash.source_filename)
             continue
 
-        existing_by_name = registry.find_by_filename(pdf_path.name)
+        progress(index, name, STAGE_LOADING)
+        try:
+            pages = load_single_pdf(pdf_path)
+        except PDFLoadError as exc:
+            logger.error("Failed to load '%s': %s", name, exc)
+            fail(index, name, type(exc).__name__, str(exc))
+            continue
+
+        progress(index, name, STAGE_CHUNKING)
+        chunking_result = split_documents(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        if not chunking_result.chunks:
+            logger.error("'%s' produced zero chunks — skipping", name)
+            fail(index, name, "ZeroChunksError", "Produced zero chunks after splitting.")
+            continue
+
+        # Only now — the new version is known to be usable — retire the old one.
+        existing_by_name = registry.find_by_filename(name)
         is_reindex = existing_by_name is not None
         if is_reindex:
-            logger.info(
-                "Content of '%s' changed since last index — re-indexing", pdf_path.name
-            )
+            logger.info("Content of '%s' changed since last index — re-indexing", name)
             stale_vector_ids = registry.remove_document(existing_by_name.doc_id)
             faiss_store.remove_ids(stale_vector_ids)
             metadata_store.remove(stale_vector_ids)
 
-        try:
-            pages = load_single_pdf(pdf_path)
-        except PDFLoadError as exc:
-            logger.error("Failed to load '%s': %s", pdf_path.name, exc)
-            result.failed_files.append((pdf_path.name, str(exc)))
-            continue
-
-        chunking_result = split_documents(pages, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-        if not chunking_result.chunks:
-            logger.error("'%s' produced zero chunks — skipping", pdf_path.name)
-            result.failed_files.append((pdf_path.name, "Produced zero chunks after splitting."))
-            continue
-
+        progress(index, name, STAGE_EMBEDDING)
         vector_ids = add_chunks_to_index(chunking_result.chunks, embedder, faiss_store, metadata_store, registry)
 
         doc_id = pages[0].metadata["doc_id"]
         page_count = len({p.metadata["page_number"] for p in pages})
         registry.add_document(
             doc_id=doc_id,
-            source_filename=pdf_path.name,
+            source_filename=name,
             content_hash=content_hash,
             page_count=page_count,
             chunk_count=len(vector_ids),
@@ -165,10 +260,12 @@ def run_full_ingestion_pipeline(
         )
 
         result.total_chunks_added += len(vector_ids)
-        if is_reindex:
-            result.reindexed_files.append(pdf_path.name)
-        else:
-            result.indexed_files.append(pdf_path.name)
+        status = STATUS_REINDEXED if is_reindex else STATUS_INDEXED
+        (result.reindexed_files if is_reindex else result.indexed_files).append(name)
+        result.file_results.append(
+            FileResult(filename=name, status=status, chunks_added=len(vector_ids), page_count=page_count)
+        )
+        progress(index, name, status)
 
     if persist:
         _persist(faiss_store, metadata_store, registry)

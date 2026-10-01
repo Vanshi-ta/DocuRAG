@@ -97,7 +97,8 @@ ENTITY_FANOUT_ENABLED = _env_str("ENTITY_FANOUT_ENABLED", "true").lower() == "tr
 # calibrated probability — see README "Limitations". Set to 0 (or leave
 # unset with SIMILARITY_THRESHOLD_ENABLED=false) to disable filtering.
 SIMILARITY_THRESHOLD_ENABLED = _env_str("SIMILARITY_THRESHOLD_ENABLED", "false").lower() == "true"
-SIMILARITY_THRESHOLD = _env_float("SIMILARITY_THRESHOLD", 0.3) if SIMILARITY_THRESHOLD_ENABLED else None
+SIMILARITY_THRESHOLD_VALUE = _env_float("SIMILARITY_THRESHOLD", 0.3)
+SIMILARITY_THRESHOLD = SIMILARITY_THRESHOLD_VALUE if SIMILARITY_THRESHOLD_ENABLED else None
 
 # --- Generation ------------------------------------------------------------
 OLLAMA_BASE_URL = _env_str("OLLAMA_BASE_URL", "http://localhost:11434")
