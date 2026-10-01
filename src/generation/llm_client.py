@@ -16,6 +16,7 @@ from config import (
     LLM_TEMPERATURE,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
+    OLLAMA_NUM_CTX,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,12 @@ class OllamaClient:
         model: str = OLLAMA_MODEL,
         base_url: str = OLLAMA_BASE_URL,
         temperature: float = LLM_TEMPERATURE,
+        num_ctx: int = OLLAMA_NUM_CTX,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.temperature = temperature
+        self.num_ctx = num_ctx
 
     def generate(self, prompt: str) -> str:
         url = f"{self.base_url}/api/generate"
@@ -43,7 +46,10 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": self.temperature},
+            "options": {
+                "temperature": self.temperature,
+                "num_ctx": self.num_ctx,
+            },
         }
 
         try:

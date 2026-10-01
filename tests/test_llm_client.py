@@ -54,6 +54,7 @@ def test_generate_sends_correct_payload(mock_post):
     assert payload["prompt"] == "my prompt"
     assert payload["stream"] is False
     assert payload["options"]["temperature"] == 0.2
+    assert payload["options"]["num_ctx"] == 1024
 
 
 @patch("src.generation.llm_client.requests.post")

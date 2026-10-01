@@ -96,12 +96,13 @@ ENTITY_FANOUT_ENABLED = _env_str("ENTITY_FANOUT_ENABLED", "true").lower() == "tr
 # to the LLM. This is a blunt, empirically-tuned heuristic, not a
 # calibrated probability — see README "Limitations". Set to 0 (or leave
 # unset with SIMILARITY_THRESHOLD_ENABLED=false) to disable filtering.
-SIMILARITY_THRESHOLD_ENABLED = _env_str("SIMILARITY_THRESHOLD_ENABLED", "true").lower() == "true"
+SIMILARITY_THRESHOLD_ENABLED = _env_str("SIMILARITY_THRESHOLD_ENABLED", "false").lower() == "true"
 SIMILARITY_THRESHOLD = _env_float("SIMILARITY_THRESHOLD", 0.3) if SIMILARITY_THRESHOLD_ENABLED else None
 
 # --- Generation ------------------------------------------------------------
 OLLAMA_BASE_URL = _env_str("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = _env_str("OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 1024)
 LLM_TEMPERATURE = _env_float("LLM_TEMPERATURE", 0.1)
 LLM_REQUEST_TIMEOUT_SECONDS = _env_int("LLM_REQUEST_TIMEOUT_SECONDS", 120)
 
