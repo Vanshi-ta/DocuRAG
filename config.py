@@ -41,7 +41,7 @@ def _env_float(name: str, default: float | None) -> float | None:
     return float(raw)
 
 
-# --- Paths -------------------------------------------------------------
+#  Paths -
 UPLOAD_DIR = BASE_DIR / "data" / "uploads"
 SUPPORTED_EXTENSIONS = {".pdf"}
 
@@ -53,14 +53,14 @@ DOCUMENT_REGISTRY_PATH = VECTOR_STORE_DIR / "documents.json"
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE_PATH = LOG_DIR / "docurag.log"
 
-# --- Chunking ------------------------------------------------------------
+#  Chunking 
 CHUNK_SIZE = _env_int("CHUNK_SIZE", 1000)
 CHUNK_OVERLAP = _env_int("CHUNK_OVERLAP", 150)
 
-# --- Embeddings ------------------------------------------------------------
+#  Embeddings 
 EMBEDDING_MODEL_NAME = _env_str("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
-# --- Retrieval ------------------------------------------------------------
+#  Retrieval 
 # DEFAULT_TOP_K: how many chunks are ultimately handed to the LLM.
 # Raised from 4 -> 6 in this phase: with MAX_CHUNKS_PER_SOURCE=2 below, 6
 # slots guarantee room for at least 3 distinct documents' chunks in a
@@ -100,13 +100,13 @@ SIMILARITY_THRESHOLD_ENABLED = _env_str("SIMILARITY_THRESHOLD_ENABLED", "false")
 SIMILARITY_THRESHOLD_VALUE = _env_float("SIMILARITY_THRESHOLD", 0.3)
 SIMILARITY_THRESHOLD = SIMILARITY_THRESHOLD_VALUE if SIMILARITY_THRESHOLD_ENABLED else None
 
-# --- Generation ------------------------------------------------------------
+#  Generation 
 OLLAMA_BASE_URL = _env_str("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = _env_str("OLLAMA_MODEL", "llama3.2:3b")
-OLLAMA_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 1024)
+OLLAMA_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 4096)
 LLM_TEMPERATURE = _env_float("LLM_TEMPERATURE", 0.1)
 LLM_REQUEST_TIMEOUT_SECONDS = _env_int("LLM_REQUEST_TIMEOUT_SECONDS", 120)
 
-# --- Logging ------------------------------------------------------------
+#  Logging 
 LOG_LEVEL = _env_str("LOG_LEVEL", "INFO")
 LOG_TO_FILE = _env_str("LOG_TO_FILE", "true").lower() == "true"

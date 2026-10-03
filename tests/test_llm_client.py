@@ -13,6 +13,7 @@ Run from the project root with:
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from config import OLLAMA_NUM_CTX
 
 import pytest
 import requests
@@ -54,7 +55,7 @@ def test_generate_sends_correct_payload(mock_post):
     assert payload["prompt"] == "my prompt"
     assert payload["stream"] is False
     assert payload["options"]["temperature"] == 0.2
-    assert payload["options"]["num_ctx"] == 1024
+    assert payload["options"]["num_ctx"] == OLLAMA_NUM_CTX
 
 
 @patch("src.generation.llm_client.requests.post")
