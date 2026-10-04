@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from config import OLLAMA_NUM_CTX
+import logging
 
 import pytest
 import requests
@@ -84,3 +85,25 @@ def test_generate_returns_empty_string_without_crashing_on_empty_response(mock_p
     result = client.generate("some prompt")
 
     assert result == ""
+
+
+@patch("src.generation.llm_client.requests.post")
+def test_warns_when_prompt_may_exceed_context(mock_post, caplog):
+    mock_post.return_value = make_mock_response({"response": "ok"})
+    client = OllamaClient(model="fake-model", num_ctx=1024)
+
+    with caplog.at_level(logging.WARNING, logger="src.generation.llm_client"):
+        client.generate("x" * 5000)
+
+    assert "silently truncate" in caplog.text
+
+
+@patch("src.generation.llm_client.requests.post")
+def test_no_warning_for_small_prompt(mock_post, caplog):
+    mock_post.return_value = make_mock_response({"response": "ok"})
+    client = OllamaClient(model="fake-model", num_ctx=4096)
+
+    with caplog.at_level(logging.WARNING, logger="src.generation.llm_client"):
+        client.generate("a short prompt")
+
+    assert "silently truncate" not in caplog.text
