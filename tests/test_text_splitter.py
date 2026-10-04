@@ -56,3 +56,19 @@ def test_chunks_get_unique_chunk_ids():
     result = split_documents([doc], chunk_size=200, chunk_overlap=30)
     chunk_ids = {c.metadata["chunk_id"] for c in result.chunks}
     assert len(chunk_ids) == len(result.chunks)
+
+
+def test_split_documents_drops_near_empty_chunks():
+    docs = [
+        make_document("●"),
+        make_document("   12   "),
+        make_document("Real sentence with enough words in it."),
+    ]
+    result = split_documents(docs, chunk_size=1000, chunk_overlap=150)
+    assert [c.page_content for c in result.chunks] == ["Real sentence with enough words in it."]
+    assert [c.metadata["chunk_index"] for c in result.chunks] == [0]
+
+
+def test_split_documents_returns_no_chunks_when_nothing_has_content():
+    result = split_documents([make_document("●")], chunk_size=1000, chunk_overlap=150)
+    assert result.chunks == []

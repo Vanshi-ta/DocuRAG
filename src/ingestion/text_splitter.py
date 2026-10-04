@@ -23,7 +23,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from config import CHUNK_OVERLAP, CHUNK_SIZE
 
 logger = logging.getLogger(__name__)
-
+MIN_CHUNK_ALNUM_CHARS = 10
 
 @dataclass
 class ChunkingResult:
@@ -59,6 +59,20 @@ def validate_chunk_params(chunk_size: int, chunk_overlap: int) -> None:
         )
 
 
+def _drop_near_empty_chunks(chunks: List[Document]) -> List[Document]:
+    kept = [
+        c for c in chunks
+        if sum(ch.isalnum() for ch in c.page_content) >= MIN_CHUNK_ALNUM_CHARS
+    ]
+    dropped = len(chunks) - len(kept)
+    if dropped:
+        logger.info(
+            "Dropped %d near-empty chunk(s) (fewer than %d letters/digits)",
+            dropped, MIN_CHUNK_ALNUM_CHARS,
+        )
+    return kept
+
+
 def split_documents(
     documents: List[Document],
     chunk_size: int = CHUNK_SIZE,
@@ -74,7 +88,7 @@ def split_documents(
     )
 
     chunks = splitter.split_documents(documents)
-
+    chunks = _drop_near_empty_chunks(chunks)
     if not chunks:
         logger.warning(
             "Splitting produced zero chunks from %d input Documents.", len(documents)
