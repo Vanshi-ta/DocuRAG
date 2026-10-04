@@ -244,6 +244,10 @@ class Retriever:
                 selected.append(c)
                 selected_ids.add(c.chunk_id)
 
+        # Best-first overall: the cap pass and the backfill pass each append in
+        # score order, so without this a backfilled 0.38 chunk can follow a 0.28 one.
+        selected.sort(key=lambda c: c.similarity_score, reverse=True)
+
         n_sources = len({c.source_filename for c in selected})
         logger.info(
             "retrieve_diverse: %d raw candidates from FAISS -> %d passed threshold -> "

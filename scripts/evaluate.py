@@ -55,7 +55,7 @@ from typing import List, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from config import CANDIDATE_POOL_SIZE, DEFAULT_TOP_K, MAX_CHUNKS_PER_SOURCE, SIMILARITY_THRESHOLD
+from config import CANDIDATE_POOL_SIZE, DEFAULT_TOP_K, MAX_CHUNKS_PER_SOURCE, SIMILARITY_THRESHOLD_VALUE
 from src.generation.llm_client import OllamaClient
 from src.generation.rag_engine import answer_question
 from src.ingestion.embedder import Embedder
@@ -116,7 +116,7 @@ def evaluate_question(question_entry: dict, retriever: Retriever, max_k: int) ->
 
     if qtype == "unsupported":
         top_score = retrieved[0][2] if retrieved else float("-inf")
-        threshold = SIMILARITY_THRESHOLD if SIMILARITY_THRESHOLD is not None else float("inf")
+        threshold = SIMILARITY_THRESHOLD_VALUE if SIMILARITY_THRESHOLD_VALUE is not None else float("inf")
         correctly_rejected = top_score < threshold
     else:
         for k in K_VALUES:

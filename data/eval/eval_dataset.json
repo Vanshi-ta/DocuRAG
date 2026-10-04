@@ -1,0 +1,10 @@
+{
+  "questions": [
+    {"id": "q01", "question": "What is the Class XII percentage?", "type": "factual",
+     "relevant_sources": [{"source_filename": "Vanshita_Suryavanshi.pdf", "page_number": 1}]},
+    {"id": "q02", "question": "How many participants are in the training and validation sets?", "type": "factual",
+     "relevant_sources": [{"source_filename": "BTP_report_midsem (10).pdf", "page_number": 6},
+                          {"source_filename": "BTP_report_midsem (10).pdf", "page_number": 7}]},
+    {"id": "u01", "question": "What is the capital of Australia?", "type": "unsupported", "relevant_sources": []}
+  ]
+}
