@@ -35,7 +35,8 @@ from src.errors import (
 logger = logging.getLogger(__name__)
 
 HEALTH_CHECK_TIMEOUT_SECONDS = 3
-
+CHARS_PER_TOKEN_ESTIMATE = 3.5
+ANSWER_RESERVE_TOKENS = 300
 
 class OllamaClient:
     """
@@ -55,6 +56,30 @@ class OllamaClient:
         self.temperature = temperature
         self.num_ctx = num_ctx
 
+    
+    # --- diagnostics -------------------------------------------------------
+    def _warn_if_prompt_may_not_fit(self, prompt: str) -> None:
+        estimated = int(len(prompt) / CHARS_PER_TOKEN_ESTIMATE)
+        budget = self.num_ctx - ANSWER_RESERVE_TOKENS
+        if estimated > budget:
+            logger.warning(
+                "Prompt is ~%d tokens (estimated) but only ~%d fit in num_ctx=%d "
+                "after reserving %d for the answer; Ollama will silently truncate it. "
+                "Lower top_k or raise OLLAMA_NUM_CTX.",
+                estimated, budget, self.num_ctx, ANSWER_RESERVE_TOKENS,
+            )
+
+    @staticmethod
+    def _log_usage(data: Dict[str, Any]) -> None:
+        def secs(key: str) -> float:
+            return round(data.get(key, 0) / 1e9, 1)
+
+        logger.info(
+            "Ollama usage: prompt_tokens=%s output_tokens=%s prompt_eval_s=%s generation_s=%s total_s=%s",
+            data.get("prompt_eval_count"), data.get("eval_count"),
+            secs("prompt_eval_duration"), secs("eval_duration"), secs("total_duration"),
+        )
+
     # --- request building / error mapping ---------------------------------
     def _payload(self, prompt: str, stream: bool) -> Dict[str, Any]:
         return {
@@ -70,6 +95,7 @@ class OllamaClient:
     def _post(self, prompt: str, stream: bool) -> requests.Response:
         """POST to /api/generate, translating transport failures into
         DocuRAG's structured errors."""
+        self._warn_if_prompt_may_not_fit(prompt)
         url = f"{self.base_url}/api/generate"
         try:
             response = requests.post(
@@ -108,6 +134,7 @@ class OllamaClient:
     def generate(self, prompt: str) -> str:
         response = self._post(prompt, stream=False)
         data = response.json()
+        self._log_usage(data)
         answer = data.get("response", "").strip()
 
         if not answer:
@@ -146,8 +173,9 @@ class OllamaClient:
                 if token:
                     produced_any = True
                     yield token
-
+                    
                 if data.get("done"):
+                    self._log_usage(data)
                     break
         except requests.exceptions.Timeout as exc:
             raise LLMTimeoutError(
