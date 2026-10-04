@@ -36,6 +36,11 @@ def test_reset_all_removes_pdfs_and_persisted_store(tmp_path, monkeypatch):
     monkeypatch.setattr("src.pipeline.FAISS_INDEX_PATH", fake_index_path)
     monkeypatch.setattr("src.pipeline.METADATA_STORE_PATH", fake_metadata_path)
 
+    fake_registry_path = vector_store_dir / "documents.json"
+    fake_registry_path.write_text("{}")
+    monkeypatch.setattr(config, "DOCUMENT_REGISTRY_PATH", fake_registry_path)
+    monkeypatch.setattr("src.pipeline.DOCUMENT_REGISTRY_PATH", fake_registry_path)
+
     reset_all(directory=upload_dir)
 
     assert not (upload_dir / "a.pdf").exists()
@@ -43,6 +48,7 @@ def test_reset_all_removes_pdfs_and_persisted_store(tmp_path, monkeypatch):
     assert (upload_dir / "notes.txt").exists()  # non-PDF untouched
     assert not fake_index_path.exists()
     assert not fake_metadata_path.exists()
+    assert not fake_registry_path.exists()
 
 
 def test_reset_all_does_not_raise_when_nothing_exists_yet(tmp_path, monkeypatch):
@@ -54,5 +60,7 @@ def test_reset_all_does_not_raise_when_nothing_exists_yet(tmp_path, monkeypatch)
 
     monkeypatch.setattr("src.pipeline.FAISS_INDEX_PATH", missing_index_path)
     monkeypatch.setattr("src.pipeline.METADATA_STORE_PATH", missing_metadata_path)
-
+    missing_registry_path = tmp_path / "does_not_exist" / "documents.json"
+    monkeypatch.setattr("src.pipeline.DOCUMENT_REGISTRY_PATH", missing_registry_path)
+    
     reset_all(directory=empty_dir)  # should simply do nothing, not raise
