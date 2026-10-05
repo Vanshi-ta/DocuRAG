@@ -1,15 +1,4 @@
-"""
-Conversation persistence for DocuRAG.
 
-The backend previously had no concept of a conversation: history lived only
-in the UI's session state and vanished on refresh. This store keeps each
-conversation as one small JSON file (data/conversations/<id>.json), which is
-enough for a history sidebar, reopening old chats, renaming and deleting.
-
-It is intentionally decoupled from retrieval: sources are stored as plain
-snapshots (duck-typed from RetrievedChunk), so old chats still render after
-documents are deleted or re-indexed.
-"""
 
 from __future__ import annotations
 
@@ -46,7 +35,7 @@ class StoredSource:
 @dataclass
 class StoredMessage:
     id: str
-    role: str  # "user" | "assistant"
+    role: str                        
     content: str
     created_at: str
     sources: Optional[List[StoredSource]] = None
@@ -72,7 +61,7 @@ class ConversationSummary:
 
 
 def sources_from_chunks(chunks: Iterable[Any]) -> List[StoredSource]:
-    """Snapshot RetrievedChunk-like objects (duck-typed) for storage."""
+    
     return [
         StoredSource(
             source_filename=c.source_filename,
@@ -89,7 +78,7 @@ class ConversationStore:
     def __init__(self, directory: Path = DEFAULT_CONVERSATIONS_DIR):
         self.directory = Path(directory)
 
-    # --- helpers -----------------------------------------------------------
+                                                                             
     def _path(self, conversation_id: str) -> Path:
         if not _ID_PATTERN.fullmatch(conversation_id or ""):
             raise ValueError(f"Invalid conversation id: {conversation_id!r}")
@@ -101,7 +90,7 @@ class ConversationStore:
         tmp = path.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(asdict(conv), f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)  # atomic: a crash never leaves a half-written chat
+        os.replace(tmp, path)                                                    
 
     @staticmethod
     def _from_dict(raw: Dict[str, Any]) -> Conversation:
@@ -127,7 +116,7 @@ class ConversationStore:
             messages=messages,
         )
 
-    # --- API -----------------------------------------------------------------
+                                                                               
     def create(self, title: Optional[str] = None) -> Conversation:
         now = _now()
         conv = Conversation(id=uuid.uuid4().hex, title=title or DEFAULT_TITLE, created_at=now, updated_at=now)
@@ -142,7 +131,7 @@ class ConversationStore:
             return self._from_dict(json.load(f))
 
     def list(self) -> List[ConversationSummary]:
-        """Most recently updated first. Unreadable files are skipped, not fatal."""
+        
         if not self.directory.exists():
             return []
         summaries = []
@@ -185,7 +174,7 @@ class ConversationStore:
         )
         conv.messages.append(message)
         conv.updated_at = message.created_at
-        # Auto-title from the first user question.
+                                                  
         if conv.title == DEFAULT_TITLE and role == "user":
             first_line = content.strip().splitlines()[0] if content.strip() else ""
             if first_line:

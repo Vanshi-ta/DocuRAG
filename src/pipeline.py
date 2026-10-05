@@ -1,17 +1,4 @@
-"""
-Pipeline orchestration for DocuRAG.
 
-The only module that chains ingestion, chunking, embedding, and vector
-storage together, and the only module that knows about duplicate
-detection and document deletion/re-indexing. Each stage module (pdf_loader,
-text_splitter, embedder, faiss_store, metadata_store, document_registry)
-stays independently testable and swappable.
-
-UI-facing additions (all optional, backwards compatible):
-  - `paths=` lets a caller ingest specific files instead of scanning a folder
-  - `progress_callback=` reports per-file stages while ingestion runs
-  - `PipelineRunResult.file_results` gives one structured entry per file
-"""
 
 from __future__ import annotations
 
@@ -36,12 +23,12 @@ from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.index_builder import add_chunks_to_index
 from src.vectorstore.metadata_store import MetadataStore
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:                    
     from src.ingestion.embedder import Embedder
 
 logger = logging.getLogger(__name__)
 
-# --- Per-file outcome / progress vocabulary ----------------------------------
+                                                                               
 STATUS_INDEXED = "indexed"
 STATUS_REINDEXED = "reindexed"
 STATUS_SKIPPED_DUPLICATE = "skipped_duplicate"
@@ -50,31 +37,27 @@ STATUS_FAILED = "failed"
 STAGE_HASHING = "hashing"
 STAGE_LOADING = "loading"
 STAGE_CHUNKING = "chunking"
-STAGE_EMBEDDING = "embedding"  # covers embed + FAISS add; one step, no finer hook
+STAGE_EMBEDDING = "embedding"                                                     
 
 
 @dataclass
 class FileResult:
-    """Outcome for one file in an ingestion run."""
+    
 
     filename: str
-    status: str  # one of the STATUS_* constants
+    status: str                                 
     chunks_added: int = 0
     page_count: int = 0
-    error_type: Optional[str] = None  # e.g. "CorruptedPDFError" (failed files only)
+    error_type: Optional[str] = None                                                
     error: Optional[str] = None
 
 
 @dataclass
 class IngestionProgress:
-    """
-    One progress event. While a file is being processed, `stage` is a STAGE_*
-    value. When a file finishes, `stage` is its final STATUS_* value, so a UI
-    can use a single field to drive a per-file status chip.
-    """
+    
 
     filename: str
-    file_index: int  # 1-based
+    file_index: int           
     total_files: int
     stage: str
     message: str = ""
@@ -85,14 +68,14 @@ ProgressCallback = Callable[[IngestionProgress], None]
 
 @dataclass
 class PipelineRunResult:
-    """Summary of one ingestion run, for UI display and logging."""
+    
 
     indexed_files: List[str] = field(default_factory=list)
-    skipped_duplicate_files: List[str] = field(default_factory=list)  # (filename)
-    reindexed_files: List[str] = field(default_factory=list)          # content changed
-    failed_files: List[Tuple[str, str]] = field(default_factory=list)  # (filename, reason)
+    skipped_duplicate_files: List[str] = field(default_factory=list)              
+    reindexed_files: List[str] = field(default_factory=list)                           
+    failed_files: List[Tuple[str, str]] = field(default_factory=list)                      
     total_chunks_added: int = 0
-    file_results: List[FileResult] = field(default_factory=list)       # one per file, in order
+    file_results: List[FileResult] = field(default_factory=list)                               
 
     def summary(self) -> str:
         lines = [
@@ -124,12 +107,12 @@ def _persist(faiss_store: FaissVectorStore, metadata_store: MetadataStore, regis
 
 
 def _emit(callback: Optional[ProgressCallback], event: IngestionProgress) -> None:
-    """Call the progress callback, but never let a UI bug abort ingestion."""
+    
     if callback is None:
         return
     try:
         callback(event)
-    except Exception:  # pragma: no cover - defensive
+    except Exception:                                
         logger.exception("progress_callback raised; ignoring so ingestion can continue")
 
 
@@ -142,30 +125,10 @@ def run_full_ingestion_pipeline(
     paths: Optional[Sequence[Path]] = None,
     progress_callback: Optional[ProgressCallback] = None,
 ) -> Tuple[PipelineRunResult, FaissVectorStore, MetadataStore, DocumentRegistry]:
-    """
-    Ingest PDFs into the persistent vector store — every PDF in `directory`
-    (default: UPLOAD_DIR), or exactly the files in `paths` when given —
-    handling each file as follows:
-
-      1. Hash the file's raw bytes.
-      2. If that hash is already registered under any filename -> skip
-         (duplicate content, log it, do not re-embed).
-      3. Load and chunk the file. On failure, record it and move on; if it
-         was a changed version of an already-indexed file, the OLD indexed
-         version is left intact rather than lost.
-      4. If a document with the same *filename* is already registered but
-         with a *different* hash -> the file changed; remove the old
-         document's vectors/metadata/registry entry now (clean re-indexing,
-         not silent duplication or stale data).
-      5. Embed and add the new/changed file to the index.
-
-    Existing indexed documents not present in this run are left untouched —
-    this function only adds/updates, it never deletes based on absence. Use
-    `remove_document()` for explicit deletion.
-    """
+    
     if embedder is None:
-        # Imported here (not at module top) so importing the pipeline stays
-        # cheap and testable without sentence-transformers installed.
+                                                                           
+                                                                     
         from src.ingestion.embedder import Embedder as _Embedder
 
         embedder = _Embedder()
@@ -236,7 +199,7 @@ def run_full_ingestion_pipeline(
             fail(index, name, "ZeroChunksError", "Produced zero chunks after splitting.")
             continue
 
-        # Only now — the new version is known to be usable — retire the old one.
+                                                                                
         existing_by_name = registry.find_by_filename(name)
         is_reindex = existing_by_name is not None
         if is_reindex:
@@ -275,7 +238,7 @@ def run_full_ingestion_pipeline(
 
 
 def load_vector_store(embedding_dimension: int) -> Tuple[FaissVectorStore, MetadataStore, DocumentRegistry]:
-    """Reload a previously persisted store without re-running ingestion."""
+    
     faiss_store = FaissVectorStore.load(FAISS_INDEX_PATH, embedding_dimension)
     metadata_store = MetadataStore.load(METADATA_STORE_PATH)
     registry = DocumentRegistry.load(DOCUMENT_REGISTRY_PATH)
@@ -289,12 +252,7 @@ def remove_document(
     registry: DocumentRegistry,
     persist: bool = True,
 ) -> int:
-    """
-    Explicitly delete one indexed document: removes its vectors from FAISS,
-    its records from the metadata store, and its entry from the registry.
-    Every other document's vector IDs are untouched. Returns the number of
-    chunks removed.
-    """
+    
     vector_ids = registry.remove_document(doc_id)
     faiss_store.remove_ids(vector_ids)
     metadata_store.remove(vector_ids)
@@ -306,8 +264,7 @@ def remove_document(
 
 
 def reset_all(directory: Path | None = None) -> None:
-    """Delete all uploaded PDFs and the persisted index/metadata/registry,
-    returning the project to a clean, unindexed state."""
+    
     if directory is None:
         directory = UPLOAD_DIR
     for pdf_path in directory.glob("*.pdf"):

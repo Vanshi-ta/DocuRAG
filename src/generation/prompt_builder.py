@@ -1,18 +1,4 @@
-"""
-Prompt construction module for DocuRAG.
 
-Responsible ONLY for turning (retrieved chunks + a user's question) into a
-single grounded prompt string. No retrieval, no LLM calling.
-
-Revision note: the context format and system prompt were rewritten to fix
-an observed failure mode where multi-document/comparison questions were
-answered incompletely or incorrectly with "I could not find this
-information" even when relevant chunks from multiple documents WERE
-retrieved. The retrieval layer fix (retriever.retrieve_for_question) makes
-sure evidence from all relevant documents actually reaches this module;
-this module's job is to present that evidence clearly enough, and instruct
-the LLM explicitly enough, that it actually uses all of it.
-"""
 
 from __future__ import annotations
 
@@ -48,13 +34,7 @@ STYLE
 
 
 def format_context(chunks: List[RetrievedChunk]) -> str:
-    """
-    Format retrieved chunks as explicit SOURCE / PAGE / CONTENT blocks
-    rather than an inline label + text blob. This makes document
-    boundaries unambiguous to the LLM, which matters specifically for
-    multi-document questions (rules 4-9 above depend on the model being
-    able to tell where one document's evidence ends and another's begins).
-    """
+    
     if not chunks:
         return "(no relevant context was retrieved)"
 

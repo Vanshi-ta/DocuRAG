@@ -1,19 +1,4 @@
-"""
-Document registry for DocuRAG.
 
-FaissVectorStore and MetadataStore both operate at the *chunk* level. This
-module tracks state at the *document* level:
-
-    - which documents are already indexed, keyed by content hash (so the
-      same PDF uploaded twice — even under a different filename — is
-      detected and skipped rather than re-embedded)
-    - which vector IDs belong to which document (so deleting or
-      re-indexing a document means "remove exactly these IDs," not a full
-      rebuild)
-    - a single monotonically increasing counter that hands out the int64
-      vector IDs FaissVectorStore and MetadataStore use, so IDs are never
-      reused even after documents are deleted
-"""
 
 from __future__ import annotations
 
@@ -40,10 +25,10 @@ class DocumentEntry:
 
 @dataclass
 class DocumentRegistry:
-    documents: Dict[str, DocumentEntry] = field(default_factory=dict)  # doc_id -> entry
+    documents: Dict[str, DocumentEntry] = field(default_factory=dict)                   
     next_vector_id: int = 0
 
-    # --- lookups -----------------------------------------------------------
+                                                                             
     def find_by_hash(self, content_hash: str) -> Optional[DocumentEntry]:
         for entry in self.documents.values():
             if entry.content_hash == content_hash:
@@ -59,7 +44,7 @@ class DocumentRegistry:
     def list_documents(self) -> List[DocumentEntry]:
         return sorted(self.documents.values(), key=lambda e: e.source_filename)
 
-    # --- mutation -----------------------------------------------------------
+                                                                              
     def allocate_vector_ids(self, n: int) -> List[int]:
         ids = list(range(self.next_vector_id, self.next_vector_id + n))
         self.next_vector_id += n
@@ -91,8 +76,7 @@ class DocumentRegistry:
         return entry
 
     def remove_document(self, doc_id: str) -> List[int]:
-        """Remove a document from the registry. Returns its vector IDs so
-        the caller can remove them from FaissVectorStore and MetadataStore."""
+        
         entry = self.documents.pop(doc_id, None)
         if entry is None:
             return []
@@ -102,7 +86,7 @@ class DocumentRegistry:
         )
         return entry.vector_ids
 
-    # --- persistence -----------------------------------------------------------
+                                                                                 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {

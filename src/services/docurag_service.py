@@ -1,16 +1,4 @@
-"""
-Service layer for DocuRAG.
 
-One object that owns everything a frontend needs: the embedder, the LLM
-client, and the three persisted stores (FAISS, metadata, registry). It moves
-the orchestration that used to live in app.py (session-state juggling,
-retriever construction, threshold selection, upload saving) behind plain
-methods, so ANY frontend — the current Streamlit app, a redesigned one, or a
-FastAPI/React stack later — is a thin caller.
-
-This module has no UI imports. Its public methods raise the structured
-errors from src/errors.py.
-"""
 
 from __future__ import annotations
 
@@ -45,12 +33,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ServiceStatus:
-    """Snapshot for header / empty-state / error-banner rendering."""
+    
 
     index_loaded: bool
     document_count: int
     chunk_count: int
-    llm: Dict[str, Any]  # OllamaClient.health_check() result
+    llm: Dict[str, Any]                                      
 
 
 class DocuRAGService:
@@ -60,7 +48,7 @@ class DocuRAGService:
         llm_client: Optional[OllamaClient] = None,
         upload_dir: Path = UPLOAD_DIR,
     ):
-        self._embedder = embedder  # created lazily: loading the model is slow
+        self._embedder = embedder                                             
         self.llm_client = llm_client or OllamaClient()
         self.upload_dir = Path(upload_dir)
 
@@ -68,9 +56,9 @@ class DocuRAGService:
         self.metadata_store = None
         self.registry: Optional[DocumentRegistry] = None
 
-        self._lock = threading.RLock()  # guards mutations (ingest / delete / reset)
+        self._lock = threading.RLock()                                              
 
-    # --- embedder (lazy) ---------------------------------------------------
+                                                                             
     @property
     def embedder(self):
         if self._embedder is None:
@@ -79,9 +67,9 @@ class DocuRAGService:
             self._embedder = Embedder()
         return self._embedder
 
-    # --- state -------------------------------------------------------------
+                                                                             
     def load_existing(self) -> bool:
-        """Load a previously persisted index. Returns False on a fresh project."""
+        
         with self._lock:
             if self.faiss_store is not None:
                 return True
@@ -109,13 +97,9 @@ class DocuRAGService:
             llm=llm,
         )
 
-    # --- documents ---------------------------------------------------------
+                                                                             
     def save_uploads(self, files: Mapping[str, bytes]) -> Tuple[List[Path], List[str]]:
-        """
-        Write uploaded file bytes into the upload directory.
-        Returns (saved_paths, rejected_names). Names are reduced to their
-        basename, and anything that isn't a supported type is rejected.
-        """
+        
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         saved: List[Path] = []
         rejected: List[str] = []
@@ -134,8 +118,7 @@ class DocuRAGService:
         paths: Optional[Sequence[Path]] = None,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> PipelineRunResult:
-        """Ingest `paths` (or everything in the upload dir) and adopt the
-        resulting stores as the service's current state."""
+        
         with self._lock:
             result, faiss_store, metadata_store, registry = run_full_ingestion_pipeline(
                 directory=self.upload_dir,
@@ -148,7 +131,7 @@ class DocuRAGService:
             return result
 
     def delete_document(self, doc_id: str) -> int:
-        """Remove one document. Returns the number of chunks removed."""
+        
         with self._lock:
             if self.registry is None:
                 return 0
@@ -159,7 +142,7 @@ class DocuRAGService:
             reset_all(self.upload_dir)
             self.faiss_store = self.metadata_store = self.registry = None
 
-    # --- questions ---------------------------------------------------------
+                                                                             
     def _prepare_question(self, question: str, use_threshold: bool) -> Tuple[str, Retriever, Optional[float]]:
         question = (question or "").strip()
         if not question:

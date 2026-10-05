@@ -1,12 +1,4 @@
-"""
-Index builder for DocuRAG.
 
-The only module that knows about all four pieces: chunk Documents, the
-Embedder, FaissVectorStore, and MetadataStore. It allocates vector IDs from
-the DocumentRegistry, embeds the chunks, and adds them to FAISS and the
-metadata store under those same IDs — the ordering/ID-matching guarantee
-every downstream lookup depends on.
-"""
 
 from __future__ import annotations
 
@@ -18,7 +10,7 @@ from src.vectorstore.document_registry import DocumentRegistry
 from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.metadata_store import ChunkRecord, MetadataStore
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:                    
     from src.ingestion.embedder import Embedder
 
 
@@ -29,11 +21,7 @@ def add_chunks_to_index(
     metadata_store: MetadataStore,
     registry: DocumentRegistry,
 ) -> List[int]:
-    """
-    Embed `chunks` and add them to faiss_store/metadata_store under newly
-    allocated vector IDs. Returns the list of vector IDs used, so the
-    caller can register them against a DocumentEntry.
-    """
+    
     if not chunks:
         return []
 

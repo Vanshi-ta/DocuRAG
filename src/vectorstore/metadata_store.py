@@ -1,15 +1,4 @@
-"""
-Metadata store module for DocuRAG.
 
-FAISS (via IndexIDMap2) returns caller-assigned int64 vector IDs from a
-search — never text. This module keeps a dict of {vector_id: ChunkRecord}
-so a search hit turns into "that means chunk X of handbook.pdf, page 7."
-
-Keyed by ID rather than position (as an earlier version of this module was)
-specifically because IDs are stable across deletions — removing document A's
-three chunks does not renumber document B's chunks, so no desync is
-possible.
-"""
 
 from __future__ import annotations
 
@@ -24,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChunkRecord:
-    """One metadata record, keyed by its vector_id (the same ID used in FAISS)."""
+    
 
     vector_id: int
     chunk_id: str
@@ -44,7 +33,7 @@ class MetadataStore:
             self.records[record.vector_id] = record
 
     def remove(self, vector_ids: Iterable[int]) -> int:
-        """Remove records for the given vector IDs. Returns count removed."""
+        
         removed = 0
         for vid in vector_ids:
             if vid in self.records:

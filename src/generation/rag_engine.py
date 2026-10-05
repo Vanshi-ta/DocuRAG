@@ -1,14 +1,4 @@
-"""
-RAG answer engine for DocuRAG.
 
-The only module that knows about all three query-time pieces: retrieval
-strategy, prompt construction, and the LLM client.
-
-Two entry points share the same retrieval + prompt logic:
-  - `answer_question`        -> blocking, returns the full RAGAnswer (unchanged)
-  - `answer_question_stream` -> returns sources immediately and the answer as
-                                a token iterator, for a streaming UI
-"""
 
 from __future__ import annotations
 
@@ -34,9 +24,7 @@ NO_RELEVANT_CONTEXT_MESSAGE = "I could not find this information in the provided
 
 @dataclass
 class RAGAnswer:
-    """The generated answer plus the chunks it was grounded in, and a
-    transparency flag on whether retrieval was confident enough to even
-    call the LLM."""
+    
 
     question: str
     answer: str
@@ -46,12 +34,7 @@ class RAGAnswer:
 
 @dataclass
 class RAGStream:
-    """
-    Streaming counterpart of RAGAnswer. `sources` and `used_llm` are known
-    BEFORE generation starts, so a UI can render source cards while the
-    answer is still being written. `tokens` yields answer text fragments;
-    when `used_llm` is False it yields the standard "not found" message once.
-    """
+    
 
     question: str
     sources: List[RetrievedChunk]
@@ -89,24 +72,7 @@ def answer_question(
     similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
     entity_fanout_enabled: bool = ENTITY_FANOUT_ENABLED,
 ) -> RAGAnswer:
-    """
-    Full query-time RAG flow:
-      1. retrieve chunks via `retrieve_for_question` — a single
-         `retrieve_diverse` call for questions about one entity/document,
-         or an entity-fan-out merge for questions naming 2+ entities (see
-         retriever.py for why the distinction matters). Either way, chunks
-         below `similarity_threshold` are already excluded.
-      2. if NOTHING survives retrieval, short-circuit: return the standard
-         "not found" message WITHOUT calling the LLM. This is the ONLY
-         place "not found" is decided before generation — it fires purely
-         on "zero relevant chunks exist", never on "the question's exact
-         wording wasn't matched" (that distinction lives entirely in
-         retrieval; by the time chunks reach here, they were judged
-         semantically relevant, which is why the LLM prompt is now
-         instructed not to second-guess them into another "not found").
-      3. otherwise, build a grounded prompt and call the LLM
-      4. return the answer alongside the chunks it was grounded in
-    """
+    
     retrieved_chunks = _retrieve(
         question, retriever, top_k, candidate_pool_size,
         max_chunks_per_source, similarity_threshold, entity_fanout_enabled,
@@ -137,12 +103,7 @@ def answer_question_stream(
     similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
     entity_fanout_enabled: bool = ENTITY_FANOUT_ENABLED,
 ) -> RAGStream:
-    """
-    Same retrieval, same prompt, same "no relevant context" short-circuit as
-    `answer_question` — only the delivery differs. Retrieval runs eagerly;
-    the LLM request is opened eagerly too (so connection/model errors are
-    raised from this call), while the answer text arrives via `.tokens`.
-    """
+    
     retrieved_chunks = _retrieve(
         question, retriever, top_k, candidate_pool_size,
         max_chunks_per_source, similarity_threshold, entity_fanout_enabled,

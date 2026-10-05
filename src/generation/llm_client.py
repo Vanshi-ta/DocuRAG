@@ -1,14 +1,4 @@
-"""
-LLM client module for DocuRAG.
 
-Responsible ONLY for sending a fully-built prompt string to a local Ollama
-model and returning its generated text, either all at once (`generate`) or
-token-by-token (`generate_stream`), plus a non-raising `health_check`.
-
-Failures are raised as the structured exceptions in src/errors.py. Each one
-subclasses the built-in (ConnectionError / TimeoutError) the old code raised,
-so existing callers and tests are unaffected.
-"""
 
 from __future__ import annotations
 
@@ -39,10 +29,7 @@ CHARS_PER_TOKEN_ESTIMATE = 3.5
 ANSWER_RESERVE_TOKENS = 300
 
 class OllamaClient:
-    """
-    Thin wrapper around Ollama's local REST API. Ollama must already be
-    running and the target model already pulled (`ollama pull <model>`).
-    """
+    
 
     def __init__(
         self,
@@ -57,7 +44,7 @@ class OllamaClient:
         self.num_ctx = num_ctx
 
     
-    # --- diagnostics -------------------------------------------------------
+                                                                             
     def _warn_if_prompt_may_not_fit(self, prompt: str) -> None:
         estimated = int(len(prompt) / CHARS_PER_TOKEN_ESTIMATE)
         budget = self.num_ctx - ANSWER_RESERVE_TOKENS
@@ -80,7 +67,7 @@ class OllamaClient:
             secs("prompt_eval_duration"), secs("eval_duration"), secs("total_duration"),
         )
 
-    # --- request building / error mapping ---------------------------------
+                                                                            
     def _payload(self, prompt: str, stream: bool) -> Dict[str, Any]:
         return {
             "model": self.model,
@@ -93,8 +80,7 @@ class OllamaClient:
         }
 
     def _post(self, prompt: str, stream: bool) -> requests.Response:
-        """POST to /api/generate, translating transport failures into
-        DocuRAG's structured errors."""
+        
         self._warn_if_prompt_may_not_fit(prompt)
         url = f"{self.base_url}/api/generate"
         try:
@@ -130,7 +116,7 @@ class OllamaClient:
                 f"Is model '{self.model}' pulled? Try `ollama pull {self.model}`."
             ) from exc
 
-    # --- generation --------------------------------------------------------
+                                                                             
     def generate(self, prompt: str) -> str:
         response = self._post(prompt, stream=False)
         data = response.json()
@@ -143,14 +129,7 @@ class OllamaClient:
         return answer
 
     def generate_stream(self, prompt: str) -> Iterator[str]:
-        """
-        Stream the answer as text fragments.
-
-        The HTTP request is opened immediately, so connection / model errors
-        are raised from THIS call (before a UI has started drawing an empty
-        answer bubble). Errors that happen mid-stream are raised while
-        iterating.
-        """
+        
         response = self._post(prompt, stream=True)
         return self._iter_tokens(response)
 
@@ -194,15 +173,9 @@ class OllamaClient:
         if not produced_any:
             logger.warning("Ollama returned an empty streamed response for this prompt")
 
-    # --- health ------------------------------------------------------------
+                                                                             
     def health_check(self) -> Dict[str, Any]:
-        """
-        Never raises. Lets a UI show "Ollama offline" / "model missing"
-        states up front instead of discovering them on the first question.
-
-        Returns: {"reachable": bool, "model": str, "model_available": bool,
-                  "available_models": [str, ...]}
-        """
+        
         result: Dict[str, Any] = {
             "reachable": False,
             "model": self.model,
@@ -215,7 +188,7 @@ class OllamaClient:
             )
             response.raise_for_status()
             names = [m.get("name", "") for m in response.json().get("models", [])]
-        except Exception as exc:  # deliberately broad: a health probe must not raise
+        except Exception as exc:                                                     
             logger.info("Ollama health check failed: %s", exc)
             return result
 

@@ -1,12 +1,4 @@
-"""
-Centralized logging setup for DocuRAG.
 
-Every module gets its logger via `logging.getLogger(__name__)` as before,
-but configuration (level, format, file handler) now lives in exactly one
-place instead of being repeated ad hoc in every file. `configure_logging()`
-is idempotent — safe to call from app.py, scripts/*, and __main__ blocks
-without producing duplicate log lines.
-"""
 
 from __future__ import annotations
 
@@ -44,7 +36,7 @@ def configure_logging() -> None:
         file_handler.setFormatter(fmt)
         root.addHandler(file_handler)
 
-    # Quiet down noisy third-party libraries so DocuRAG's own events stand out.
+                                                                               
     logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 

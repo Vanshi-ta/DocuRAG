@@ -1,14 +1,4 @@
-"""
-Text chunking module for DocuRAG.
 
-Responsible ONLY for:
-    - splitting page-level LangChain Documents into smaller, overlapping
-      chunks using RecursiveCharacterTextSplitter
-    - preserving every piece of metadata pdf_loader attached
-    - adding chunk-specific metadata (chunk_id, chunk_index, chunk_char_count)
-    - validating chunk_size/chunk_overlap so a common misconfiguration
-      (overlap >= size) fails loudly instead of silently producing garbage
-"""
 
 from __future__ import annotations
 
