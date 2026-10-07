@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class DocuRAGError(Exception):
     
 
     code: str = "docurag_error"
-    default_hint: Optional[str] = None
+    default_hint: str | None = None
 
-    def __init__(self, message: str, hint: Optional[str] = None):
+    def __init__(self, message: str, hint: str | None = None):
         super().__init__(message)
         self.hint = hint if hint is not None else self.default_hint
 

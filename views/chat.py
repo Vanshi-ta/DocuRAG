@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 USER_AVATAR = ":material/person:"
 ASSISTANT_AVATAR = ":material/auto_awesome:"
 DOCS_PAGE = "views/documents.py"
-SETTINGS_PAGE = "views/settings.py"
 
 SUGGESTIONS = [
     (":material/summarize:", "Summarize each document in a few sentences."),

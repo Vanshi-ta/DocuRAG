@@ -1,17 +1,11 @@
 """
 Automated test for src/pipeline.py's reset_all(), used by the Streamlit
-"Reset index" button (Phase 7).
+"Reset index" button.
 
 Run from the project root with:
     pytest tests/test_pipeline_reset.py -v
 """
 
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-import config
 from src.pipeline import reset_all
 
 
@@ -31,14 +25,11 @@ def test_reset_all_removes_pdfs_and_persisted_store(tmp_path, monkeypatch):
 
     # Point the module's persisted-file constants at our temp files for
     # the duration of this test only.
-    monkeypatch.setattr(config, "FAISS_INDEX_PATH", fake_index_path)
-    monkeypatch.setattr(config, "METADATA_STORE_PATH", fake_metadata_path)
     monkeypatch.setattr("src.pipeline.FAISS_INDEX_PATH", fake_index_path)
     monkeypatch.setattr("src.pipeline.METADATA_STORE_PATH", fake_metadata_path)
 
     fake_registry_path = vector_store_dir / "documents.json"
     fake_registry_path.write_text("{}")
-    monkeypatch.setattr(config, "DOCUMENT_REGISTRY_PATH", fake_registry_path)
     monkeypatch.setattr("src.pipeline.DOCUMENT_REGISTRY_PATH", fake_registry_path)
 
     reset_all(directory=upload_dir)

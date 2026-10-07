@@ -1,10 +1,6 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.metadata_store import ChunkRecord, MetadataStore

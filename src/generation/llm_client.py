@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import requests
 
@@ -57,7 +58,7 @@ class OllamaClient:
             )
 
     @staticmethod
-    def _log_usage(data: Dict[str, Any]) -> None:
+    def _log_usage(data: dict[str, Any]) -> None:
         def secs(key: str) -> float:
             return round(data.get(key, 0) / 1e9, 1)
 
@@ -68,7 +69,7 @@ class OllamaClient:
         )
 
                                                                             
-    def _payload(self, prompt: str, stream: bool) -> Dict[str, Any]:
+    def _payload(self, prompt: str, stream: bool) -> dict[str, Any]:
         return {
             "model": self.model,
             "prompt": prompt,
@@ -174,9 +175,9 @@ class OllamaClient:
             logger.warning("Ollama returned an empty streamed response for this prompt")
 
                                                                              
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "reachable": False,
             "model": self.model,
             "model_available": False,

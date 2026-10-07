@@ -1,17 +1,15 @@
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.ingestion.pdf_loader import (
     EmptyFileError,
     CorruptedPDFError,
+    NoExtractableTextError,
     load_pdfs_from_directory,
     load_single_pdf,
     validate_pdf_path,
 )
+from tests.helpers import make_pdf
 
 
 def test_validate_pdf_path_raises_on_missing_file(tmp_path):
@@ -68,3 +66,22 @@ def test_load_pdfs_from_directory_skips_one_bad_file_without_crashing(tmp_path):
     assert result.loaded_files == []
     assert len(result.skipped_files) == 1
     assert result.skipped_files[0][0] == "bad.pdf"
+
+
+def test_load_single_pdf_returns_one_document_per_page_with_one_based_page_numbers(tmp_path):
+    pdf_path = tmp_path / "sample.pdf"
+    make_pdf(pdf_path, ["Hello from page one."])
+
+    pages = load_single_pdf(pdf_path)
+
+    assert len(pages) == 1
+    assert "Hello from page one." in pages[0].page_content
+    assert pages[0].metadata["page_number"] == 1
+
+
+def test_load_single_pdf_raises_when_no_page_has_extractable_text(tmp_path):
+    blank_pdf = tmp_path / "blank.pdf"
+    make_pdf(blank_pdf, [])
+
+    with pytest.raises(NoExtractableTextError):
+        load_single_pdf(blank_pdf)

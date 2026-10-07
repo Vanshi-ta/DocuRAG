@@ -1,15 +1,5 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
 from src.generation.prompt_builder import SYSTEM_INSTRUCTIONS, build_prompt, format_context
-from src.retrieval.retriever import RetrievedChunk
-
-
-def make_chunk(text, filename="doc.pdf", page=1, score=0.8):
-    return RetrievedChunk(chunk_text=text, source_filename=filename, page_number=page,
-                           similarity_score=score, chunk_id="c1")
+from tests.helpers import make_chunk
 
 
 def test_format_context_handles_empty_list():

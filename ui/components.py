@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
-from typing import Any, Iterable, List, Optional, Sequence, Tuple
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 import streamlit as st
 
@@ -68,7 +69,7 @@ _ERROR_TITLES = {
 }
 
 
-def error_card(title: str, detail: str = "", hint: Optional[str] = None, kind: str = "err") -> None:
+def error_card(title: str, detail: str = "", hint: str | None = None, kind: str = "err") -> None:
     parts = [f'<div class="card-note {kind}"><div class="ttl">{esc(title)}</div>']
     if detail:
         parts.append(f'<div class="dt">{esc(detail)}</div>')
@@ -78,19 +79,19 @@ def error_card(title: str, detail: str = "", hint: Optional[str] = None, kind: s
     html("".join(parts))
 
 
-def describe_exception(exc: BaseException) -> Tuple[str, str, Optional[str]]:
+def describe_exception(exc: BaseException) -> tuple[str, str, str | None]:
     """Map an exception to (title, detail, hint) for display."""
     if isinstance(exc, DocuRAGError):
         return _ERROR_TITLES.get(exc.code, "Something went wrong"), str(exc), exc.hint
     return "Something went wrong", str(exc) or exc.__class__.__name__, None
 
 
-def pack_error(title: str, detail: str, hint: Optional[str]) -> str:
+def pack_error(title: str, detail: str, hint: str | None) -> str:
     """Serialize an error into a chat message's text (so it survives reloads)."""
     return "\n\n".join(p for p in (title, detail, hint or "") if p)
 
 
-def unpack_error(text: str) -> Tuple[str, str, Optional[str]]:
+def unpack_error(text: str) -> tuple[str, str, str | None]:
     parts = text.split("\n\n")
     title = parts[0]
     detail = parts[1] if len(parts) > 1 else ""
@@ -99,7 +100,7 @@ def unpack_error(text: str) -> Tuple[str, str, Optional[str]]:
 
 
 # --- sources / citations ------------------------------------------------------------
-def _unique_locations(sources: Iterable[Any]) -> List[Tuple[str, int]]:
+def _unique_locations(sources: Iterable[Any]) -> list[tuple[str, int]]:
     seen, out = set(), []
     for s in sources:
         key = (s.source_filename, s.page_number)
@@ -116,7 +117,7 @@ def _preview(text: str) -> str:
     return flat
 
 
-def render_sources(sources: Optional[Sequence[Any]], used_llm: Optional[bool]) -> None:
+def render_sources(sources: Sequence[Any] | None, used_llm: bool | None) -> None:
     """Chips for each cited file/page, plus an expander with the actual passages.
     Works with RetrievedChunk or StoredSource objects (same attribute names)."""
     if sources is None:

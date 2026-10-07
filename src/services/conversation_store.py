@@ -9,7 +9,8 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from config import BASE_DIR
 
@@ -38,8 +39,8 @@ class StoredMessage:
     role: str                        
     content: str
     created_at: str
-    sources: Optional[List[StoredSource]] = None
-    used_llm: Optional[bool] = None
+    sources: list[StoredSource] | None = None
+    used_llm: bool | None = None
     is_error: bool = False
 
 
@@ -49,7 +50,7 @@ class Conversation:
     title: str
     created_at: str
     updated_at: str
-    messages: List[StoredMessage] = field(default_factory=list)
+    messages: list[StoredMessage] = field(default_factory=list)
 
 
 @dataclass
@@ -60,7 +61,7 @@ class ConversationSummary:
     message_count: int
 
 
-def sources_from_chunks(chunks: Iterable[Any]) -> List[StoredSource]:
+def sources_from_chunks(chunks: Iterable[Any]) -> list[StoredSource]:
     
     return [
         StoredSource(
@@ -93,7 +94,7 @@ class ConversationStore:
         os.replace(tmp, path)                                                    
 
     @staticmethod
-    def _from_dict(raw: Dict[str, Any]) -> Conversation:
+    def _from_dict(raw: dict[str, Any]) -> Conversation:
         messages = []
         for m in raw.get("messages", []):
             sources = m.get("sources")
@@ -117,7 +118,7 @@ class ConversationStore:
         )
 
                                                                                
-    def create(self, title: Optional[str] = None) -> Conversation:
+    def create(self, title: str | None = None) -> Conversation:
         now = _now()
         conv = Conversation(id=uuid.uuid4().hex, title=title or DEFAULT_TITLE, created_at=now, updated_at=now)
         self._write(conv)
@@ -130,7 +131,7 @@ class ConversationStore:
         with open(path, "r", encoding="utf-8") as f:
             return self._from_dict(json.load(f))
 
-    def list(self) -> List[ConversationSummary]:
+    def list(self) -> list[ConversationSummary]:
         
         if not self.directory.exists():
             return []
@@ -156,8 +157,8 @@ class ConversationStore:
         conversation_id: str,
         role: str,
         content: str,
-        sources: Optional[Iterable[Any]] = None,
-        used_llm: Optional[bool] = None,
+        sources: Iterable[Any] | None = None,
+        used_llm: bool | None = None,
         is_error: bool = False,
     ) -> StoredMessage:
         if role not in ("user", "assistant"):

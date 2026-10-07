@@ -2,7 +2,7 @@ streamlit>=1.40,<2
 langchain-core>=0.3,<0.4
 langchain-community>=0.3,<0.4
 langchain-text-splitters>=0.3,<0.4
-pypdf>=4.3,<5
+pypdf>=4.3,<5                 # not imported directly; required by langchain-community's PyPDFLoader
 sentence-transformers>=3.0,<4
 faiss-cpu>=1.8,<2
 numpy>=1.26,<3
@@ -11,4 +11,4 @@ python-dotenv>=1.0,<2
 
 # Dev / testing
 pytest>=8.0,<9
-reportlab>=4.2,<5   # used only by tests/scripts to generate synthetic sample PDFs
+reportlab>=4.2,<5   # used only by tests to generate synthetic sample PDFs

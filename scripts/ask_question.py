@@ -1,23 +1,20 @@
 """
-Interactive retrieval test for DocuRAG — Phase 5.
+Interactive retrieval test for DocuRAG.
 
-Loads the persisted vector store (built in Phase 4) and lets you type
-questions in the terminal, printing the top-k retrieved chunks for each one.
-No LLM involved yet — this only tests retrieval quality in isolation.
+Loads the persisted vector store and lets you type questions in the
+terminal, printing the top-k retrieved chunks for each one. No LLM is
+involved — this only tests retrieval quality in isolation, using the plain
+single-stage `Retriever.retrieve()` (no diversity cap or entity fan-out, so it
+is not identical to what the app retrieves).
 
 Run from the project root with:
     python scripts/ask_question.py
 """
 
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+import _common  # noqa: F401  (makes the project root importable)
 
 from config import DEFAULT_TOP_K
-from src.ingestion.embedder import Embedder
-from src.pipeline import load_vector_store
-from src.retrieval.retriever import RetrievedChunk, Retriever
+from src.retrieval.retriever import RetrievedChunk
 
 
 def print_results(question: str, results: list[RetrievedChunk]) -> None:
@@ -37,34 +34,20 @@ def print_results(question: str, results: list[RetrievedChunk]) -> None:
 
 def main() -> None:
     print("Loading embedding model and vector store (one-time cost)...")
-    embedder = Embedder()
-    try:
-        faiss_store, metadata_store = load_vector_store(embedder.embedding_dimension)
-    except FileNotFoundError:
-        print(
-            "No persisted vector store found. Run `python -m src.pipeline` "
-            "first to build and save one from your PDFs in data/uploads/."
-        )
+    loaded = _common.load_retriever(
+        "No persisted vector store found. Run `python -m src.pipeline` "
+        "first to build and save one from your PDFs in data/uploads/."
+    )
+    if loaded is None:
         return
+    retriever, faiss_store = loaded
 
-    retriever = Retriever(embedder, faiss_store, metadata_store)
     print(
-        f"Ready — {faiss_store.index.ntotal} chunks indexed. "
+        f"Ready — {faiss_store.ntotal} chunks indexed. "
         f"top_k={DEFAULT_TOP_K}. Type 'quit' to exit.\n"
     )
 
-    while True:
-        try:
-            question = input("Ask a question about your documents: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nExiting.")
-            break
-
-        if question.lower() in {"quit", "exit"}:
-            break
-        if not question:
-            continue
-
+    for question in _common.prompt_questions():
         results = retriever.retrieve(question, top_k=DEFAULT_TOP_K)
         print_results(question, results)
 

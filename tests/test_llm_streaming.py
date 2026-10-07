@@ -2,14 +2,11 @@
 Fully offline: requests is mocked."""
 
 import json
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.errors import (
     LLMModelNotFoundError,
@@ -119,3 +116,22 @@ def test_health_check_never_raises_when_ollama_is_down(mock_get):
     status = OllamaClient().health_check()
     assert status["reachable"] is False
     assert status["model_available"] is False
+
+
+@patch("src.generation.llm_client.requests.post")
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (requests.exceptions.Timeout("slow"), LLMTimeoutError),
+        (requests.exceptions.ChunkedEncodingError("cut"), LLMUnavailableError),
+        (requests.exceptions.ConnectionError("gone"), LLMUnavailableError),
+    ],
+)
+def test_generate_stream_maps_mid_stream_network_errors(mock_post, exc, expected):
+    resp = stream_response([])
+    resp.iter_lines.side_effect = exc
+    mock_post.return_value = resp
+
+    with pytest.raises(expected):
+        list(OllamaClient(model="m").generate_stream("prompt"))
+    resp.close.assert_called_once()

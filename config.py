@@ -6,9 +6,9 @@ All tunable values live here and are overridable via environment variables
 hard-coded in source: `.env.example` documents every variable a deployer
 might want to change, and `.env` itself is excluded from version control.
 
-Even though DocuRAG runs fully locally (no API keys), this pattern is kept
-deliberately so that swapping in a hosted LLM/embedding provider later only
-means adding a variable here — no code changes elsewhere.
+DocuRAG runs fully locally and needs no API keys, but every tunable value is
+still read from the environment so deployment-specific settings never require
+a code change.
 """
 
 from __future__ import annotations
@@ -34,11 +34,15 @@ def _env_int(name: str, default: int) -> int:
     return int(raw) if raw is not None and raw != "" else default
 
 
-def _env_float(name: str, default: float | None) -> float | None:
+def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    return float(raw)
+    return float(raw) if raw is not None and raw != "" else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    # Only the literal string "true" (any case) enables a flag. Unlike
+    # _env_int/_env_float, an empty value counts as False, not "unset".
+    return os.getenv(name, "true" if default else "false").lower() == "true"
 
 
 #  Paths -
@@ -62,11 +66,9 @@ EMBEDDING_MODEL_NAME = _env_str("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 #  Retrieval 
 # DEFAULT_TOP_K: how many chunks are ultimately handed to the LLM.
-# Raised from 4 -> 6 in this phase: with MAX_CHUNKS_PER_SOURCE=2 below, 6
-# slots guarantee room for at least 3 distinct documents' chunks in a
-# multi-document question, instead of one document being able to fill
-# every slot. See docs/RETRIEVAL.md for the reasoning and before/after
-# test results.
+# With MAX_CHUNKS_PER_SOURCE=2 below, 6 slots leave room for at least 3
+# distinct documents in a multi-document question, instead of one document
+# being able to fill every slot. See docs/RETRIEVAL.md for the reasoning.
 DEFAULT_TOP_K = _env_int("DEFAULT_TOP_K", 6)
 MAX_TOP_K = _env_int("MAX_TOP_K", 10)
 
@@ -88,15 +90,17 @@ MAX_CHUNKS_PER_SOURCE = _env_int("MAX_CHUNKS_PER_SOURCE", 2)
 # entity and merge results, instead of a single query embedding that can
 # semantically drift toward whichever entity's wording is closer to the
 # rest of the question. See src/retrieval/query_processing.py.
-ENTITY_FANOUT_ENABLED = _env_str("ENTITY_FANOUT_ENABLED", "true").lower() == "true"
+ENTITY_FANOUT_ENABLED = _env_bool("ENTITY_FANOUT_ENABLED", True)
 
 # SIMILARITY_THRESHOLD: minimum cosine similarity (inner product on
 # normalized vectors, range ~[-1, 1]) for a retrieved chunk to be treated
 # as relevant. Chunks scoring below this are discarded before being shown
 # to the LLM. This is a blunt, empirically-tuned heuristic, not a
-# calibrated probability — see README "Limitations". Set to 0 (or leave
-# unset with SIMILARITY_THRESHOLD_ENABLED=false) to disable filtering.
-SIMILARITY_THRESHOLD_ENABLED = _env_str("SIMILARITY_THRESHOLD_ENABLED", "false").lower() == "true"
+# calibrated probability. Filtering is OFF by default; it only applies when
+# SIMILARITY_THRESHOLD_ENABLED=true. SIMILARITY_THRESHOLD_VALUE is the raw
+# number (the UI's "ignore weak passages" toggle uses it too), while
+# SIMILARITY_THRESHOLD is that number or None depending on the env flag.
+SIMILARITY_THRESHOLD_ENABLED = _env_bool("SIMILARITY_THRESHOLD_ENABLED", False)
 SIMILARITY_THRESHOLD_VALUE = _env_float("SIMILARITY_THRESHOLD", 0.3)
 SIMILARITY_THRESHOLD = SIMILARITY_THRESHOLD_VALUE if SIMILARITY_THRESHOLD_ENABLED else None
 
@@ -109,4 +113,4 @@ LLM_REQUEST_TIMEOUT_SECONDS = _env_int("LLM_REQUEST_TIMEOUT_SECONDS", 300)
 
 #  Logging 
 LOG_LEVEL = _env_str("LOG_LEVEL", "INFO")
-LOG_TO_FILE = _env_str("LOG_TO_FILE", "true").lower() == "true"
+LOG_TO_FILE = _env_bool("LOG_TO_FILE", True)

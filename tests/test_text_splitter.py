@@ -1,10 +1,6 @@
-import sys
-from pathlib import Path
-
 import pytest
 from langchain_core.documents import Document
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.ingestion.text_splitter import split_documents, validate_chunk_params
 

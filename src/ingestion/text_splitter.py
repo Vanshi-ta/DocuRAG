@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import List
+
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -17,7 +17,7 @@ MIN_CHUNK_ALNUM_CHARS = 10
 
 @dataclass
 class ChunkingResult:
-    chunks: List[Document] = field(default_factory=list)
+    chunks: list[Document] = field(default_factory=list)
     source_document_count: int = 0
     chunk_size: int = CHUNK_SIZE
     chunk_overlap: int = CHUNK_OVERLAP
@@ -49,7 +49,7 @@ def validate_chunk_params(chunk_size: int, chunk_overlap: int) -> None:
         )
 
 
-def _drop_near_empty_chunks(chunks: List[Document]) -> List[Document]:
+def _drop_near_empty_chunks(chunks: list[Document]) -> list[Document]:
     kept = [
         c for c in chunks
         if sum(ch.isalnum() for ch in c.page_content) >= MIN_CHUNK_ALNUM_CHARS
@@ -64,7 +64,7 @@ def _drop_near_empty_chunks(chunks: List[Document]) -> List[Document]:
 
 
 def split_documents(
-    documents: List[Document],
+    documents: list[Document],
     chunk_size: int = CHUNK_SIZE,
     chunk_overlap: int = CHUNK_OVERLAP,
 ) -> ChunkingResult:

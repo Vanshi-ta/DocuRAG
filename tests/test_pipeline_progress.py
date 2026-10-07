@@ -2,57 +2,8 @@
 per-file results, `paths=`, and failed re-index leaving the old version intact.
 Uses the same real stores + fake embedder approach as test_pipeline_integration.py."""
 
-import hashlib
-import sys
-from pathlib import Path
-
-import numpy as np
-import pytest
-from reportlab.pdfgen import canvas
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-import config
 from src.pipeline import run_full_ingestion_pipeline
-
-
-class DeterministicFakeEmbedder:
-    embedding_dimension = 16
-
-    def embed_texts(self, texts):
-        vectors = []
-        for text in texts:
-            seed = int(hashlib.sha256(text.encode()).hexdigest()[:8], 16)
-            v = np.random.default_rng(seed).random(self.embedding_dimension, dtype=np.float64)
-            vectors.append((v / np.linalg.norm(v)).astype("float32"))
-        return np.vstack(vectors) if vectors else np.empty((0, self.embedding_dimension), dtype="float32")
-
-    def embed_query(self, text):
-        return self.embed_texts([text])
-
-
-def make_pdf(path: Path, lines):
-    c = canvas.Canvas(str(path))
-    y = 750
-    for line in lines:
-        c.drawString(72, y, line)
-        y -= 20
-    c.showPage()
-    c.save()
-
-
-@pytest.fixture
-def isolated_dirs(tmp_path, monkeypatch):
-    upload_dir = tmp_path / "uploads"
-    store_dir = tmp_path / "vector_store"
-    upload_dir.mkdir()
-    store_dir.mkdir()
-    for prefix in ("config", "src.pipeline"):
-        monkeypatch.setattr(f"{prefix}.UPLOAD_DIR", upload_dir)
-        monkeypatch.setattr(f"{prefix}.FAISS_INDEX_PATH", store_dir / "index.faiss")
-        monkeypatch.setattr(f"{prefix}.METADATA_STORE_PATH", store_dir / "metadata.json")
-        monkeypatch.setattr(f"{prefix}.DOCUMENT_REGISTRY_PATH", store_dir / "documents.json")
-    return upload_dir
+from tests.helpers import DeterministicFakeEmbedder, make_pdf
 
 
 def test_progress_events_and_file_results(isolated_dirs):

@@ -1,4 +1,3 @@
-```
 # DocuRAG
 
 DocuRAG is a local document question-answering system built for PDF collections. It lets you upload PDF files, index them into a FAISS vector store, and ask natural-language questions about the content using a retrieval-augmented generation (RAG) flow grounded in the uploaded documents.
@@ -14,7 +13,8 @@ The app runs fully on local infrastructure for the core workflow: embeddings are
 - Index those embeddings in a persistent FAISS store
 - Store metadata such as source filename, page number, and chunk content
 - Retrieve the most relevant chunks for a question
-- Optionally filter low-similarity results before prompting the model
+- Diversify retrieval so one document cannot fill every result slot, and search each named entity separately for multi-entity questions
+- Optionally filter low-similarity results before prompting the model (off by default)
 - Build a grounded prompt from the user question and retrieved context
 - Send that prompt to a local Ollama LLM
 - Return the answer and show the supporting source chunks
@@ -24,21 +24,21 @@ The app runs fully on local infrastructure for the core workflow: embeddings are
 ## Architecture
 
 ```text
-User uploads PDFs
+Streamlit UI (app.py → views/ + ui/)
         │
         ▼
-Streamlit UI (app.py)
+DocuRAGService (src/services/)  ── conversation history (ConversationStore)
         │
-        ├── Ingestion pipeline
+        ├── Ingestion pipeline (src/pipeline.py)
         │       ├── PDF loading (PyPDF)
         │       ├── Chunking
         │       ├── Embedding (Sentence Transformers)
         │       ├── FAISS indexing
         │       └── Metadata + registry persistence
         │
-        └── Query pipeline
+        └── Query pipeline (src/retrieval/ + src/generation/)
                 ├── Embed the question
-                ├── Retrieve relevant chunks from FAISS
+                ├── Retrieve relevant chunks from FAISS (diversity cap, entity fan-out)
                 ├── Optional similarity filtering
                 ├── Build grounded prompt
                 ├── Generate answer with Ollama
@@ -103,16 +103,16 @@ Then open the local Streamlit URL in your browser, upload PDFs, and ask question
 
 ## Configuration
 
-Project settings are defined in `config.py` and can be overridden with environment variables via a local `.env` file.
+Project settings are defined in `config.py`. Tunable values can be overridden with environment variables via a local `.env` file (see `.env.example` for the full list and defaults). Storage locations (`data/uploads/`, `data/vector_store/`) and the log file path are fixed in `config.py` and are not environment-driven.
 
 Key settings include:
 
-- `UPLOAD_DIR` for uploaded PDFs
-- `VECTOR_STORE_DIR` for the FAISS index and metadata files
 - `CHUNK_SIZE` and `CHUNK_OVERLAP`
 - `EMBEDDING_MODEL_NAME`
 - `DEFAULT_TOP_K` and `MAX_TOP_K` for retrieval
-- `SIMILARITY_THRESHOLD` for filtering weak results
+- `CANDIDATE_POOL_SIZE` and `MAX_CHUNKS_PER_SOURCE` for the diversity-aware retrieval stage
+- `ENTITY_FANOUT_ENABLED` to search each named entity in a multi-entity question separately
+- `SIMILARITY_THRESHOLD_ENABLED` and `SIMILARITY_THRESHOLD` for filtering weak results (filtering is off by default)
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and `OLLAMA_NUM_CTX`
 
 ## Data and persistence
@@ -129,48 +129,60 @@ This allows the app to reload previously indexed documents without re-uploading 
 ## Project layout
 
 ```text
-app.py                 # Streamlit UI entry point
+app.py                 # Streamlit entry point (navigation + page setup)
 config.py              # Global project configuration
 requirements.txt       # Python dependencies
+pytest.ini             # Test configuration (puts the project root on sys.path)
 README.md              # Project overview and usage
 
 data/
   uploads/             # PDF files uploaded by users
   vector_store/        # FAISS index + metadata + registry
 
+views/                 # Streamlit pages: chat, documents, settings
+ui/                    # Shared UI pieces: components, state/caching, theme
+
 scripts/
-  ask_llm.py
-  ask_question.py
+  _common.py           # shared bootstrap/helpers for the scripts below
+  ask_llm.py           # interactive end-to-end Q&A in the terminal
+  ask_question.py      # interactive retrieval-only check (no LLM)
   evaluate.py
   experiment_chunk_sizes.py
   tune_threshold.py
   verify_vector_store.py
 
 src/
+  services/            # DocuRAGService + conversation storage (what the UI calls)
   generation/          # LLM + prompt + answer-generation logic
   ingestion/           # PDF loading, chunking, hashing, embeddings
   retrieval/           # Query processing + retrieval logic
   vectorstore/         # FAISS store, metadata storage, registry
-  pipeline.py          # full ingestion pipeline orchestration
+  pipeline.py          # ingestion pipeline orchestration
+  errors.py            # structured exceptions shown by the UI
   logging_config.py
 
-tests/                 # unit and integration tests
+tests/                 # unit and integration tests (shared fakes in helpers.py, fixtures in conftest.py)
+```
+
+## Running tests
+
+```bash
+pytest
 ```
 
 ## Notes
 
 - The app is designed for local document search and Q&A rather than general-purpose web search.
 - Retrieval is tuned to surface relevant passages from uploaded PDFs while preventing one document from dominating the result set.
-- If no relevant chunks are found, the app avoids calling the LLM and returns a clear "not found" answer instead of hallucinating.
+- When the similarity threshold is enabled and no chunk passes it, the app skips the LLM and returns a clear "not found" answer. With the default (filtering off), the model is always called when the index is non-empty and is instructed to answer only from the retrieved context.
 - The app supports replacing a changed PDF with the same filename and will re-index it cleanly without leaving stale vectors behind.
 
 ## Typical workflow
 
-1. Upload PDFs in the sidebar.
-2. Click "Process Documents" to extract, split, embed, and index them.
-3. Ask a question in the chat panel.
+1. Open the **Documents** page and upload PDFs.
+2. Click **Index files** to extract, split, embed, and index them.
+3. Open **Chat** and ask a question.
 4. Review the retrieved source snippets and the generated answer.
-5. Delete a document or reset the project when needed.
+5. Remove a document from the Documents page, or reset the index from **Settings**, when needed.
 
 This project is best understood as a small, fully local RAG application for PDF-based knowledge retrieval and grounded Q&A.
-```

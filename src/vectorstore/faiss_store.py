@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Sequence, Tuple
+from collections.abc import Sequence
 
 import faiss
 import numpy as np
@@ -51,7 +51,7 @@ class FaissVectorStore:
         logger.info("Removed %d vectors from FAISS index (now %d total)", n_removed, self.ntotal)
         return n_removed
 
-    def search(self, query_vector: np.ndarray, top_k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+    def search(self, query_vector: np.ndarray, top_k: int = 5) -> tuple[np.ndarray, np.ndarray]:
         
         if self.index.ntotal == 0:
             raise ValueError("Cannot search an empty index — add vectors first")
@@ -65,7 +65,7 @@ class FaissVectorStore:
         logger.info("Saved FAISS index (%d vectors) to %s", self.ntotal, path)
 
     @classmethod
-    def load(cls, path: Path, embedding_dimension: int) -> "FaissVectorStore":
+    def load(cls, path: Path, embedding_dimension: int) -> FaissVectorStore:
         if not path.exists():
             raise FileNotFoundError(f"No FAISS index found at {path}")
         store = cls(embedding_dimension)

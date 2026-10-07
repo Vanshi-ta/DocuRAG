@@ -6,7 +6,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class ChunkRecord:
 
 class MetadataStore:
     def __init__(self):
-        self.records: Dict[int, ChunkRecord] = {}
+        self.records: dict[int, ChunkRecord] = {}
 
     def add_records(self, records: Iterable[ChunkRecord]) -> None:
         for record in records:
@@ -60,7 +60,7 @@ class MetadataStore:
         logger.info("Saved %d metadata records to %s", len(self.records), path)
 
     @classmethod
-    def load(cls, path: Path) -> "MetadataStore":
+    def load(cls, path: Path) -> MetadataStore:
         if not path.exists():
             raise FileNotFoundError(f"No metadata store found at {path}")
         store = cls()

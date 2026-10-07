@@ -1,10 +1,7 @@
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.services.conversation_store import DEFAULT_TITLE, ConversationStore
 

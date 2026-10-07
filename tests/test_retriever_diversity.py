@@ -25,41 +25,14 @@ and verifies:
      toward one of them.
 """
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.retrieval.retriever import Retriever, retrieve_for_question
 from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.metadata_store import ChunkRecord, MetadataStore
-
-
-class FakeEmbedder:
-    def __init__(self, dimension: int = 8):
-        self.embedding_dimension = dimension
-        self._registry = {}
-
-    def register(self, text: str, vector: np.ndarray) -> None:
-        norm = vector / np.linalg.norm(vector)
-        self._registry[text] = norm.astype("float32")
-
-    def embed_query(self, text: str) -> np.ndarray:
-        if text not in self._registry:
-            raise KeyError(
-                f"FakeEmbedder has no vector registered for query: {text!r}. "
-                f"Registered: {list(self._registry.keys())}"
-            )
-        return self._registry[text].reshape(1, -1)
-
-
-def unit_vector(seed: int, dim: int = 8) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    v = rng.random(dim, dtype=np.float64)
-    return (v / np.linalg.norm(v)).astype("float32")
+from tests.helpers import RegisteredEmbedder, near_vector, unit_vector
 
 
 @pytest.fixture
@@ -74,18 +47,12 @@ def dominated_corpus():
     dim = 8
     faiss_store = FaissVectorStore(embedding_dimension=dim)
     metadata_store = MetadataStore()
-    embedder = FakeEmbedder(dimension=dim)
+    embedder = RegisteredEmbedder(dimension=dim)
 
     base = unit_vector(seed=1, dim=dim)
 
-    def near(vec, noise_seed, noise_scale):
-        rng = np.random.default_rng(noise_seed)
-        noise = rng.normal(0, noise_scale, size=dim).astype("float32")
-        v = vec + noise
-        return (v / np.linalg.norm(v)).astype("float32")
-
-    vanshita_vectors = [near(base, seed, 0.02) for seed in range(10, 14)]  # very close to query
-    manas_vector = near(base, 900, 0.55)  # further, but still plausibly relevant
+    vanshita_vectors = [near_vector(base, seed, 0.02) for seed in range(10, 14)]  # very close to query
+    manas_vector = near_vector(base, 900, 0.55)  # further, but still plausibly relevant
 
     vector_ids = [1, 2, 3, 4, 5]
     faiss_store.add_vectors(np.vstack(vanshita_vectors + [manas_vector]), vector_ids)
@@ -154,18 +121,12 @@ def test_retrieve_diverse_strictly_respects_cap_when_enough_diverse_candidates_e
     dim = 8
     faiss_store = FaissVectorStore(embedding_dimension=dim)
     metadata_store = MetadataStore()
-    embedder = FakeEmbedder(dimension=dim)
+    embedder = RegisteredEmbedder(dimension=dim)
 
     base = unit_vector(seed=1, dim=dim)
 
-    def near(vec, noise_seed, noise_scale):
-        rng = np.random.default_rng(noise_seed)
-        noise = rng.normal(0, noise_scale, size=dim).astype("float32")
-        v = vec + noise
-        return (v / np.linalg.norm(v)).astype("float32")
-
-    vanshita_vectors = [near(base, seed, 0.02) for seed in range(10, 14)]
-    manas_vectors = [near(base, seed, 0.4) for seed in (901, 902)]
+    vanshita_vectors = [near_vector(base, seed, 0.02) for seed in range(10, 14)]
+    manas_vectors = [near_vector(base, seed, 0.4) for seed in (901, 902)]
 
     ids = [1, 2, 3, 4, 5, 6]
     faiss_store.add_vectors(np.vstack(vanshita_vectors + manas_vectors), ids)

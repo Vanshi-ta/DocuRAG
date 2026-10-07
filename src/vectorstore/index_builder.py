@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from langchain_core.documents import Document
 
@@ -15,12 +15,12 @@ if TYPE_CHECKING:
 
 
 def add_chunks_to_index(
-    chunks: List[Document],
-    embedder: "Embedder",
+    chunks: list[Document],
+    embedder: Embedder,
     faiss_store: FaissVectorStore,
     metadata_store: MetadataStore,
     registry: DocumentRegistry,
-) -> List[int]:
+) -> list[int]:
     
     if not chunks:
         return []

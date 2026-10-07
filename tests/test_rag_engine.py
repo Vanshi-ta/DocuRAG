@@ -1,21 +1,5 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
 from src.generation.rag_engine import NO_RELEVANT_CONTEXT_MESSAGE, answer_question
-from src.retrieval.retriever import RetrievedChunk
-
-
-class FakeRetriever:
-    def __init__(self, chunks):
-        self._chunks = chunks
-        self.last_call = None
-
-    def retrieve_diverse(self, question, top_k, candidate_pool_size=None,
-                          max_chunks_per_source=None, similarity_threshold=None):
-        self.last_call = (question, top_k, similarity_threshold)
-        return self._chunks
+from tests.helpers import FakeRetriever, make_chunk
 
 
 class FakeLLMClient:
@@ -28,11 +12,6 @@ class FakeLLMClient:
         self.call_count += 1
         self.last_prompt = prompt
         return self.response_text
-
-
-def make_chunk(text="content", filename="doc.pdf", page=1, score=0.9):
-    return RetrievedChunk(chunk_text=text, source_filename=filename, page_number=page,
-                           similarity_score=score, chunk_id="c1")
 
 
 def test_answer_question_calls_llm_when_chunks_found():

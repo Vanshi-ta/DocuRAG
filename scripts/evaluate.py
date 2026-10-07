@@ -48,19 +48,15 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+import _common
 
 from config import CANDIDATE_POOL_SIZE, DEFAULT_TOP_K, MAX_CHUNKS_PER_SOURCE, SIMILARITY_THRESHOLD_VALUE
 from src.generation.llm_client import OllamaClient
 from src.generation.rag_engine import answer_question
-from src.ingestion.embedder import Embedder
 from src.logging_config import configure_logging
-from src.pipeline import load_vector_store
 from src.retrieval.retriever import Retriever, retrieve_for_question
 
 DEFAULT_DATASET_PATH = Path(__file__).resolve().parents[1] / "data" / "eval" / "eval_dataset.json"
@@ -73,18 +69,18 @@ class QuestionResult:
     id: str
     question: str
     type: str
-    retrieved: List[Tuple[str, int, float]]  # (filename, page, score), best-first
+    retrieved: list[tuple[str, int, float]]  # (filename, page, score), best-first
     hit_at_k: dict  # {1: bool, 3: bool, 5: bool} -- only for answerable questions
     correctly_rejected: bool | None  # only for "unsupported" questions
 
 
-def load_dataset(path: Path) -> List[dict]:
+def load_dataset(path: Path) -> list[dict]:
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     return payload["questions"]
 
 
-def source_matches(retrieved_filename: str, retrieved_page: int, ground_truth: List[dict]) -> bool:
+def source_matches(retrieved_filename: str, retrieved_page: int, ground_truth: list[dict]) -> bool:
     return any(
         retrieved_filename == gt["source_filename"] and retrieved_page == gt["page_number"]
         for gt in ground_truth
@@ -116,8 +112,7 @@ def evaluate_question(question_entry: dict, retriever: Retriever, max_k: int) ->
 
     if qtype == "unsupported":
         top_score = retrieved[0][2] if retrieved else float("-inf")
-        threshold = SIMILARITY_THRESHOLD_VALUE if SIMILARITY_THRESHOLD_VALUE is not None else float("inf")
-        correctly_rejected = top_score < threshold
+        correctly_rejected = top_score < SIMILARITY_THRESHOLD_VALUE
     else:
         for k in K_VALUES:
             top_k_slice = retrieved[:k]
@@ -130,7 +125,7 @@ def evaluate_question(question_entry: dict, retriever: Retriever, max_k: int) ->
     )
 
 
-def print_report(results: List[QuestionResult]) -> None:
+def print_report(results: list[QuestionResult]) -> None:
     answerable = [r for r in results if r.type != "unsupported"]
     unsupported = [r for r in results if r.type == "unsupported"]
 
@@ -152,7 +147,7 @@ def print_report(results: List[QuestionResult]) -> None:
         # are expected to be harder than direct ones — collapsing them into
         # one number would hide that.
         print("\nBreakdown by question type (Top-{} accuracy):".format(max(K_VALUES)))
-        for qtype in ("direct", "multi_chunk", "multi_doc"):
+        for qtype in sorted({r.type for r in answerable}):
             subset = [r for r in answerable if r.type == qtype]
             if not subset:
                 continue
@@ -176,7 +171,7 @@ def print_report(results: List[QuestionResult]) -> None:
     )
 
 
-def save_json_results(results: List[QuestionResult], path: Path) -> None:
+def save_json_results(results: list[QuestionResult], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = [
         {
@@ -194,7 +189,7 @@ def save_json_results(results: List[QuestionResult], path: Path) -> None:
     print(f"\nPer-question results saved to: {path}")
 
 
-def generate_groundedness_csv(dataset: List[dict], retriever: Retriever, llm_client: OllamaClient, path: Path) -> None:
+def generate_groundedness_csv(dataset: list[dict], retriever: Retriever, llm_client: OllamaClient, path: Path) -> None:
     """
     Runs full end-to-end RAG (retrieval + generation) for every answerable
     question and writes a CSV with an empty 'grounded (Y/N)' column for a
@@ -243,15 +238,13 @@ def main() -> None:
     configure_logging()
 
     print("Loading embedding model and vector store...")
-    embedder = Embedder()
-    try:
-        faiss_store, metadata_store, _registry = load_vector_store(embedder.embedding_dimension)
-    except FileNotFoundError:
-        print(
-            "No persisted vector store found. Index your documents first "
-            "(run the app and click 'Process Documents', or `python -m src.pipeline`)."
-        )
+    loaded = _common.load_embedder_and_store(
+        "No persisted vector store found. Index your documents first "
+        "(run the app and click 'Index files' on the Documents page, or `python -m src.pipeline`)."
+    )
+    if loaded is None:
         return
+    embedder, faiss_store, metadata_store, _registry = loaded
 
     if faiss_store.ntotal == 0:
         print("The vector store is empty (0 chunks indexed). Nothing to evaluate.")

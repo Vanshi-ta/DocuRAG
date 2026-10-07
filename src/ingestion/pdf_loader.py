@@ -6,14 +6,14 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple
+
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 
-logger = logging.getLogger(__name__)
+from config import SUPPORTED_EXTENSIONS
 
-SUPPORTED_EXTENSIONS = {".pdf"}
+logger = logging.getLogger(__name__)
 
 
 class PDFLoadError(Exception):
@@ -34,10 +34,10 @@ class NoExtractableTextError(PDFLoadError):
 
 @dataclass
 class IngestionResult:
-    documents: List[Document] = field(default_factory=list)
-    loaded_files: List[str] = field(default_factory=list)
-    skipped_files: List[Tuple[str, str]] = field(default_factory=list)                      
-    empty_pages: List[Tuple[str, int]] = field(default_factory=list)                             
+    documents: list[Document] = field(default_factory=list)
+    loaded_files: list[str] = field(default_factory=list)
+    skipped_files: list[tuple[str, str]] = field(default_factory=list)                      
+    empty_pages: list[tuple[str, int]] = field(default_factory=list)                             
 
     def summary(self) -> str:
         lines = [
@@ -66,13 +66,13 @@ def validate_pdf_path(file_path: Path) -> None:
         raise EmptyFileError(f"{file_path.name} is a 0-byte file.")
 
 
-def load_single_pdf(file_path: Path) -> List[Document]:
+def load_single_pdf(file_path: Path) -> list[Document]:
     
     validate_pdf_path(file_path)
 
     try:
         loader = PyPDFLoader(str(file_path))
-        pages: List[Document] = loader.load()
+        pages: list[Document] = loader.load()
     except Exception as exc:                                                  
                                                                            
                                                                        

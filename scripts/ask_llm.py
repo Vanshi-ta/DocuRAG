@@ -1,5 +1,5 @@
 """
-Interactive end-to-end RAG test for DocuRAG — Phase 6.
+Interactive end-to-end RAG test for DocuRAG.
 
 Loads the persisted vector store, connects to your local Ollama model, and
 lets you type questions in the terminal — printing the generated answer
@@ -9,17 +9,11 @@ Run from the project root with:
     python scripts/ask_llm.py
 """
 
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+import _common  # noqa: F401  (makes the project root importable)
 
 from config import DEFAULT_TOP_K
 from src.generation.llm_client import OllamaClient
 from src.generation.rag_engine import RAGAnswer, answer_question
-from src.ingestion.embedder import Embedder
-from src.pipeline import load_vector_store
-from src.retrieval.retriever import Retriever
 
 
 def print_answer(result: RAGAnswer) -> None:
@@ -38,36 +32,21 @@ def print_answer(result: RAGAnswer) -> None:
 
 def main() -> None:
     print("Loading embedding model and vector store...")
-    embedder = Embedder()
-    try:
-        faiss_store, metadata_store = load_vector_store(embedder.embedding_dimension)
-    except FileNotFoundError:
-        print(
-            "No persisted vector store found. Run `python -m src.pipeline` "
-            "first to build and save one from your PDFs in data/uploads/."
-        )
+    loaded = _common.load_retriever(
+        "No persisted vector store found. Run `python -m src.pipeline` "
+        "first to build and save one from your PDFs in data/uploads/."
+    )
+    if loaded is None:
         return
-
-    retriever = Retriever(embedder, faiss_store, metadata_store)
+    retriever, faiss_store = loaded
     llm_client = OllamaClient()
 
     print(
-        f"Ready — {faiss_store.index.ntotal} chunks indexed. "
+        f"Ready — {faiss_store.ntotal} chunks indexed. "
         f"Model: {llm_client.model}. Type 'quit' to exit.\n"
     )
 
-    while True:
-        try:
-            question = input("Ask a question about your documents: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nExiting.")
-            break
-
-        if question.lower() in {"quit", "exit"}:
-            break
-        if not question:
-            continue
-
+    for question in _common.prompt_questions():
         try:
             result = answer_question(question, retriever, llm_client, top_k=DEFAULT_TOP_K)
         except (ConnectionError, TimeoutError) as exc:

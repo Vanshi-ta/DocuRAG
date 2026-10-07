@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 from config import (
     CHUNK_OVERLAP,
@@ -48,8 +49,8 @@ class FileResult:
     status: str                                 
     chunks_added: int = 0
     page_count: int = 0
-    error_type: Optional[str] = None                                                
-    error: Optional[str] = None
+    error_type: str | None = None                                                
+    error: str | None = None
 
 
 @dataclass
@@ -70,12 +71,12 @@ ProgressCallback = Callable[[IngestionProgress], None]
 class PipelineRunResult:
     
 
-    indexed_files: List[str] = field(default_factory=list)
-    skipped_duplicate_files: List[str] = field(default_factory=list)              
-    reindexed_files: List[str] = field(default_factory=list)                           
-    failed_files: List[Tuple[str, str]] = field(default_factory=list)                      
+    indexed_files: list[str] = field(default_factory=list)
+    skipped_duplicate_files: list[str] = field(default_factory=list)              
+    reindexed_files: list[str] = field(default_factory=list)                           
+    failed_files: list[tuple[str, str]] = field(default_factory=list)                      
     total_chunks_added: int = 0
-    file_results: List[FileResult] = field(default_factory=list)                               
+    file_results: list[FileResult] = field(default_factory=list)                               
 
     def summary(self) -> str:
         lines = [
@@ -88,16 +89,11 @@ class PipelineRunResult:
         return "\n".join(lines)
 
 
-def _load_or_create_store(embedding_dimension: int) -> Tuple[FaissVectorStore, MetadataStore, DocumentRegistry]:
+def _load_or_create_store(embedding_dimension: int) -> tuple[FaissVectorStore, MetadataStore, DocumentRegistry]:
     try:
-        faiss_store = FaissVectorStore.load(FAISS_INDEX_PATH, embedding_dimension)
-        metadata_store = MetadataStore.load(METADATA_STORE_PATH)
-        registry = DocumentRegistry.load(DOCUMENT_REGISTRY_PATH)
+        return load_vector_store(embedding_dimension)
     except FileNotFoundError:
-        faiss_store = FaissVectorStore(embedding_dimension)
-        metadata_store = MetadataStore()
-        registry = DocumentRegistry()
-    return faiss_store, metadata_store, registry
+        return FaissVectorStore(embedding_dimension), MetadataStore(), DocumentRegistry()
 
 
 def _persist(faiss_store: FaissVectorStore, metadata_store: MetadataStore, registry: DocumentRegistry) -> None:
@@ -106,7 +102,7 @@ def _persist(faiss_store: FaissVectorStore, metadata_store: MetadataStore, regis
     registry.save(DOCUMENT_REGISTRY_PATH)
 
 
-def _emit(callback: Optional[ProgressCallback], event: IngestionProgress) -> None:
+def _emit(callback: ProgressCallback | None, event: IngestionProgress) -> None:
     
     if callback is None:
         return
@@ -122,9 +118,9 @@ def run_full_ingestion_pipeline(
     chunk_overlap: int = CHUNK_OVERLAP,
     embedder: Embedder | None = None,
     persist: bool = True,
-    paths: Optional[Sequence[Path]] = None,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Tuple[PipelineRunResult, FaissVectorStore, MetadataStore, DocumentRegistry]:
+    paths: Sequence[Path] | None = None,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[PipelineRunResult, FaissVectorStore, MetadataStore, DocumentRegistry]:
     
     if embedder is None:
                                                                            
@@ -237,7 +233,7 @@ def run_full_ingestion_pipeline(
     return result, faiss_store, metadata_store, registry
 
 
-def load_vector_store(embedding_dimension: int) -> Tuple[FaissVectorStore, MetadataStore, DocumentRegistry]:
+def load_vector_store(embedding_dimension: int) -> tuple[FaissVectorStore, MetadataStore, DocumentRegistry]:
     
     faiss_store = FaissVectorStore.load(FAISS_INDEX_PATH, embedding_dimension)
     metadata_store = MetadataStore.load(METADATA_STORE_PATH)

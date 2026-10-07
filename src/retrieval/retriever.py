@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 from config import (
     CANDIDATE_POOL_SIZE,
@@ -36,7 +36,7 @@ class RetrievedChunk:
 class Retriever:
     def __init__(
         self,
-        embedder: "Embedder",
+        embedder: Embedder,
         faiss_store: FaissVectorStore,
         metadata_store: MetadataStore,
     ):
@@ -44,31 +44,29 @@ class Retriever:
         self.faiss_store = faiss_store
         self.metadata_store = metadata_store
 
-    def retrieve(
-        self,
-        question: str,
-        top_k: int = DEFAULT_TOP_K,
-        similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
-    ) -> List[RetrievedChunk]:
+    @staticmethod
+    def _validate_question(question: str) -> None:
         if not question or not question.strip():
             raise ValueError("question must be a non-empty string")
+
+    @staticmethod
+    def _validated_top_k(top_k: int) -> int:
+        """Reject top_k < 1 and clamp anything above MAX_TOP_K."""
         if top_k < 1:
             raise ValueError(f"top_k must be at least 1, got {top_k}")
         if top_k > MAX_TOP_K:
             logger.warning("top_k=%d exceeds MAX_TOP_K=%d; clamping.", top_k, MAX_TOP_K)
-            top_k = MAX_TOP_K
+            return MAX_TOP_K
+        return top_k
 
+    def _search(self, question: str, search_width: int) -> list[RetrievedChunk]:
+        """Embed the question and return up to `search_width` unfiltered chunks, best first."""
         query_vector = self.embedder.embed_query(question)
-        scores, ids = self.faiss_store.search(query_vector, top_k=top_k)
+        scores, ids = self.faiss_store.search(query_vector, top_k=search_width)
 
-        results: List[RetrievedChunk] = []
-        n_filtered = 0
+        results: list[RetrievedChunk] = []
         for score, vid in zip(scores[0], ids[0]):
             if vid == -1:
-                continue
-            score = float(score)
-            if similarity_threshold is not None and score < similarity_threshold:
-                n_filtered += 1
                 continue
             record = self.metadata_store.get(int(vid))
             results.append(
@@ -76,10 +74,27 @@ class Retriever:
                     chunk_text=record.chunk_text,
                     source_filename=record.source_filename,
                     page_number=record.page_number,
-                    similarity_score=score,
+                    similarity_score=float(score),
                     chunk_id=record.chunk_id,
                 )
             )
+        return results
+
+    def retrieve(
+        self,
+        question: str,
+        top_k: int = DEFAULT_TOP_K,
+        similarity_threshold: float | None = SIMILARITY_THRESHOLD,
+    ) -> list[RetrievedChunk]:
+        self._validate_question(question)
+        top_k = self._validated_top_k(top_k)
+
+        raw = self._search(question, top_k)
+        if similarity_threshold is None:
+            results = raw
+        else:
+            results = [c for c in raw if c.similarity_score >= similarity_threshold]
+        n_filtered = len(raw) - len(results)
 
         logger.info(
             "Retrieved %d chunks for question %r (top_k=%d, threshold=%s, %d filtered out)",
@@ -87,34 +102,11 @@ class Retriever:
         )
         return results
 
-    def retrieve_raw(
-        self,
-        question: str,
-        search_width: int,
-    ) -> List[RetrievedChunk]:
-        if not question or not question.strip():
-            raise ValueError("question must be a non-empty string")
+    def retrieve_raw(self, question: str, search_width: int) -> list[RetrievedChunk]:
+        self._validate_question(question)
         if search_width < 1:
             raise ValueError(f"search_width must be at least 1, got {search_width}")
-
-        query_vector = self.embedder.embed_query(question)
-        scores, ids = self.faiss_store.search(query_vector, top_k=search_width)
-
-        results: List[RetrievedChunk] = []
-        for score, vid in zip(scores[0], ids[0]):
-            if vid == -1:
-                continue
-            record = self.metadata_store.get(int(vid))
-            results.append(
-                RetrievedChunk(
-                    chunk_text=record.chunk_text,
-                    source_filename=record.source_filename,
-                    page_number=record.page_number,
-                    similarity_score=float(score),
-                    chunk_id=record.chunk_id,
-                )
-            )
-        return results
+        return self._search(question, search_width)
 
     def retrieve_diverse(
         self,
@@ -122,34 +114,13 @@ class Retriever:
         top_k: int = DEFAULT_TOP_K,
         candidate_pool_size: int = CANDIDATE_POOL_SIZE,
         max_chunks_per_source: int = MAX_CHUNKS_PER_SOURCE,
-        similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
-    ) -> List[RetrievedChunk]:
-        if not question or not question.strip():
-            raise ValueError("question must be a non-empty string")
-        if top_k < 1:
-            raise ValueError(f"top_k must be at least 1, got {top_k}")
-        if top_k > MAX_TOP_K:
-            logger.warning("top_k=%d exceeds MAX_TOP_K=%d; clamping.", top_k, MAX_TOP_K)
-            top_k = MAX_TOP_K
+        similarity_threshold: float | None = SIMILARITY_THRESHOLD,
+    ) -> list[RetrievedChunk]:
+        self._validate_question(question)
+        top_k = self._validated_top_k(top_k)
 
         pool_size = max(candidate_pool_size, top_k)
-        query_vector = self.embedder.embed_query(question)
-        scores, ids = self.faiss_store.search(query_vector, top_k=pool_size)
-
-        raw_pool: List[RetrievedChunk] = []
-        for score, vid in zip(scores[0], ids[0]):
-            if vid == -1:
-                continue
-            record = self.metadata_store.get(int(vid))
-            raw_pool.append(
-                RetrievedChunk(
-                    chunk_text=record.chunk_text,
-                    source_filename=record.source_filename,
-                    page_number=record.page_number,
-                    similarity_score=float(score),
-                    chunk_id=record.chunk_id,
-                )
-            )
+        raw_pool = self._search(question, pool_size)
 
         if similarity_threshold is not None:
             candidates = [c for c in raw_pool if c.similarity_score >= similarity_threshold]
@@ -157,8 +128,8 @@ class Retriever:
             candidates = raw_pool
         n_filtered = len(raw_pool) - len(candidates)
 
-        selected: List[RetrievedChunk] = []
-        per_source_count: Dict[str, int] = {}
+        selected: list[RetrievedChunk] = []
+        per_source_count: dict[str, int] = {}
         for c in candidates:
             if len(selected) >= top_k:
                 break
@@ -212,9 +183,9 @@ def retrieve_for_question(
     top_k: int = DEFAULT_TOP_K,
     candidate_pool_size: int = CANDIDATE_POOL_SIZE,
     max_chunks_per_source: int = MAX_CHUNKS_PER_SOURCE,
-    similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
+    similarity_threshold: float | None = SIMILARITY_THRESHOLD,
     entity_fanout_enabled: bool = ENTITY_FANOUT_ENABLED,
-) -> List[RetrievedChunk]:
+) -> list[RetrievedChunk]:
     entities = extract_entities(question) if entity_fanout_enabled else []
 
     if len(entities) < 2:
@@ -227,7 +198,7 @@ def retrieve_for_question(
         )
 
     per_entity_k = max(2, -(-top_k // len(entities)))
-    merged: List[RetrievedChunk] = []
+    merged: list[RetrievedChunk] = []
     seen_chunk_ids = set()
 
     for entity in entities:
@@ -252,4 +223,3 @@ def retrieve_for_question(
         question, entities, len(merged), len({c.source_filename for c in merged}),
     )
     return merged
-

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from collections.abc import Iterator
 
 from config import (
     CANDIDATE_POOL_SIZE,
@@ -28,7 +28,7 @@ class RAGAnswer:
 
     question: str
     answer: str
-    sources: List[RetrievedChunk]
+    sources: list[RetrievedChunk]
     used_llm: bool
 
 
@@ -37,29 +37,9 @@ class RAGStream:
     
 
     question: str
-    sources: List[RetrievedChunk]
+    sources: list[RetrievedChunk]
     used_llm: bool
     tokens: Iterator[str]
-
-
-def _retrieve(
-    question: str,
-    retriever: Retriever,
-    top_k: int,
-    candidate_pool_size: int,
-    max_chunks_per_source: int,
-    similarity_threshold: Optional[float],
-    entity_fanout_enabled: bool,
-) -> List[RetrievedChunk]:
-    return retrieve_for_question(
-        question,
-        retriever,
-        top_k=top_k,
-        candidate_pool_size=candidate_pool_size,
-        max_chunks_per_source=max_chunks_per_source,
-        similarity_threshold=similarity_threshold,
-        entity_fanout_enabled=entity_fanout_enabled,
-    )
 
 
 def answer_question(
@@ -69,13 +49,18 @@ def answer_question(
     top_k: int = DEFAULT_TOP_K,
     candidate_pool_size: int = CANDIDATE_POOL_SIZE,
     max_chunks_per_source: int = MAX_CHUNKS_PER_SOURCE,
-    similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
+    similarity_threshold: float | None = SIMILARITY_THRESHOLD,
     entity_fanout_enabled: bool = ENTITY_FANOUT_ENABLED,
 ) -> RAGAnswer:
     
-    retrieved_chunks = _retrieve(
-        question, retriever, top_k, candidate_pool_size,
-        max_chunks_per_source, similarity_threshold, entity_fanout_enabled,
+    retrieved_chunks = retrieve_for_question(
+        question,
+        retriever,
+        top_k=top_k,
+        candidate_pool_size=candidate_pool_size,
+        max_chunks_per_source=max_chunks_per_source,
+        similarity_threshold=similarity_threshold,
+        entity_fanout_enabled=entity_fanout_enabled,
     )
 
     if not retrieved_chunks:
@@ -100,13 +85,18 @@ def answer_question_stream(
     top_k: int = DEFAULT_TOP_K,
     candidate_pool_size: int = CANDIDATE_POOL_SIZE,
     max_chunks_per_source: int = MAX_CHUNKS_PER_SOURCE,
-    similarity_threshold: Optional[float] = SIMILARITY_THRESHOLD,
+    similarity_threshold: float | None = SIMILARITY_THRESHOLD,
     entity_fanout_enabled: bool = ENTITY_FANOUT_ENABLED,
 ) -> RAGStream:
     
-    retrieved_chunks = _retrieve(
-        question, retriever, top_k, candidate_pool_size,
-        max_chunks_per_source, similarity_threshold, entity_fanout_enabled,
+    retrieved_chunks = retrieve_for_question(
+        question,
+        retriever,
+        top_k=top_k,
+        candidate_pool_size=candidate_pool_size,
+        max_chunks_per_source=max_chunks_per_source,
+        similarity_threshold=similarity_threshold,
+        entity_fanout_enabled=entity_fanout_enabled,
     )
 
     if not retrieved_chunks:

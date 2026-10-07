@@ -30,15 +30,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+import _common
 
 from config import SIMILARITY_THRESHOLD
-from src.ingestion.embedder import Embedder
 from src.logging_config import configure_logging
-from src.pipeline import load_vector_store
 from src.retrieval.retriever import Retriever
 
 # The exact regression set from the "Vanshita marks" bug report: the first
@@ -113,12 +109,12 @@ def main() -> None:
 
     configure_logging()
 
-    embedder = Embedder()
-    try:
-        faiss_store, metadata_store, registry = load_vector_store(embedder.embedding_dimension)
-    except FileNotFoundError:
-        print("No persisted vector store found. Index your documents first, then re-run this script.")
+    loaded = _common.load_embedder_and_store(
+        "No persisted vector store found. Index your documents first, then re-run this script."
+    )
+    if loaded is None:
         return
+    embedder, faiss_store, metadata_store, registry = loaded
     if faiss_store.ntotal == 0:
         print("Vector store is empty (0 chunks indexed). Index your documents first.")
         return

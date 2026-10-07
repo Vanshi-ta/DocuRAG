@@ -8,11 +8,14 @@ page and rerun, instead of being rebuilt per session.
 
 from __future__ import annotations
 
+from typing import Any
+
 import streamlit as st
 
 from config import DEFAULT_TOP_K, SIMILARITY_THRESHOLD
 from src.services.conversation_store import ConversationStore
 from src.services.docurag_service import DocuRAGService
+from ui.components import error_card
 
 
 @st.cache_resource(show_spinner="Loading embedding model and index…")
@@ -28,7 +31,7 @@ def get_store() -> ConversationStore:
 
 
 @st.cache_data(ttl=10, show_spinner=False)
-def llm_status() -> dict:
+def llm_status() -> dict[str, Any]:
     """Ollama health, cached briefly so every rerun doesn't ping it.
     Call `llm_status.clear()` to force a re-check."""
     return get_service().llm_client.health_check()
@@ -47,10 +50,8 @@ def init_state() -> None:
     ss.setdefault("last_ingest", None)             # per-file results of the last upload
 
 
-def require_service() -> "DocuRAGService":
+def require_service() -> DocuRAGService:
     """Return the service, or show a friendly full-page error and stop."""
-    from ui.components import error_card
-
     try:
         return get_service()
     except Exception as exc:  # e.g. embedding model can't be loaded

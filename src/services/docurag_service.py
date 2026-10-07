@@ -6,7 +6,8 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from config import (
     DEFAULT_TOP_K,
@@ -27,6 +28,11 @@ from src.pipeline import (
 )
 from src.retrieval.retriever import Retriever
 from src.vectorstore.document_registry import DocumentEntry, DocumentRegistry
+from src.vectorstore.faiss_store import FaissVectorStore
+from src.vectorstore.metadata_store import MetadataStore
+
+if TYPE_CHECKING:
+    from src.ingestion.embedder import Embedder
 
 logger = logging.getLogger(__name__)
 
@@ -38,29 +44,29 @@ class ServiceStatus:
     index_loaded: bool
     document_count: int
     chunk_count: int
-    llm: Dict[str, Any]                                      
+    llm: dict[str, Any]                                      
 
 
 class DocuRAGService:
     def __init__(
         self,
-        embedder: Any = None,
-        llm_client: Optional[OllamaClient] = None,
+        embedder: Embedder | None = None,
+        llm_client: OllamaClient | None = None,
         upload_dir: Path = UPLOAD_DIR,
     ):
         self._embedder = embedder                                             
         self.llm_client = llm_client or OllamaClient()
         self.upload_dir = Path(upload_dir)
 
-        self.faiss_store = None
-        self.metadata_store = None
-        self.registry: Optional[DocumentRegistry] = None
+        self.faiss_store: FaissVectorStore | None = None
+        self.metadata_store: MetadataStore | None = None
+        self.registry: DocumentRegistry | None = None
 
         self._lock = threading.RLock()                                              
 
                                                                              
     @property
-    def embedder(self):
+    def embedder(self) -> Embedder:
         if self._embedder is None:
             from src.ingestion.embedder import Embedder
 
@@ -85,7 +91,7 @@ class DocuRAGService:
     def has_index(self) -> bool:
         return self.faiss_store is not None and self.faiss_store.ntotal > 0
 
-    def list_documents(self) -> List[DocumentEntry]:
+    def list_documents(self) -> list[DocumentEntry]:
         return self.registry.list_documents() if self.registry is not None else []
 
     def status(self, check_llm: bool = True) -> ServiceStatus:
@@ -98,11 +104,11 @@ class DocuRAGService:
         )
 
                                                                              
-    def save_uploads(self, files: Mapping[str, bytes]) -> Tuple[List[Path], List[str]]:
+    def save_uploads(self, files: Mapping[str, bytes]) -> tuple[list[Path], list[str]]:
         
         self.upload_dir.mkdir(parents=True, exist_ok=True)
-        saved: List[Path] = []
-        rejected: List[str] = []
+        saved: list[Path] = []
+        rejected: list[str] = []
         for raw_name, data in files.items():
             name = Path(raw_name).name
             if not name or Path(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
@@ -115,8 +121,8 @@ class DocuRAGService:
 
     def ingest(
         self,
-        paths: Optional[Sequence[Path]] = None,
-        progress_callback: Optional[ProgressCallback] = None,
+        paths: Sequence[Path] | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> PipelineRunResult:
         
         with self._lock:
@@ -143,7 +149,7 @@ class DocuRAGService:
             self.faiss_store = self.metadata_store = self.registry = None
 
                                                                              
-    def _prepare_question(self, question: str, use_threshold: bool) -> Tuple[str, Retriever, Optional[float]]:
+    def _prepare_question(self, question: str, use_threshold: bool) -> tuple[str, Retriever, float | None]:
         question = (question or "").strip()
         if not question:
             raise EmptyQuestionError("Please enter a non-empty question.")

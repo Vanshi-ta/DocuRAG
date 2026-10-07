@@ -10,8 +10,6 @@ Run from the project root with:
     pytest tests/test_llm_client.py -v
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 from config import OLLAMA_NUM_CTX
 import logging
@@ -19,7 +17,6 @@ import logging
 import pytest
 import requests
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.generation.llm_client import OllamaClient
 

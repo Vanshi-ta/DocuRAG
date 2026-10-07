@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+
 
 _QUESTION_OR_FUNCTIONAL_WORDS = {
     "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
@@ -25,10 +25,10 @@ def _is_entity_candidate(word: str) -> bool:
     return word[0].isupper()
 
 
-def extract_entities(query: str) -> List[str]:
+def extract_entities(query: str) -> list[str]:
     
     words = _WORD_RE.findall(query)
-    entities: List[str] = []
+    entities: list[str] = []
 
     i = 0
     n = len(words)

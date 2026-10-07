@@ -1,33 +1,11 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.retrieval.retriever import Retriever
 from src.vectorstore.faiss_store import FaissVectorStore
 from src.vectorstore.metadata_store import ChunkRecord, MetadataStore
-
-
-class FakeEmbedder:
-    def __init__(self, dimension: int = 8):
-        self.embedding_dimension = dimension
-        self._registry = {}
-
-    def register(self, text, vector):
-        norm = vector / np.linalg.norm(vector)
-        self._registry[text] = norm.astype("float32")
-
-    def embed_query(self, text):
-        return self._registry[text].reshape(1, -1)
-
-
-def make_normalized_vector(seed, dim=8):
-    rng = np.random.default_rng(seed)
-    v = rng.random(dim, dtype=np.float64)
-    return (v / np.linalg.norm(v)).astype("float32")
+from tests.helpers import RegisteredEmbedder, unit_vector
 
 
 @pytest.fixture
@@ -35,9 +13,9 @@ def populated_store():
     dim = 8
     faiss_store = FaissVectorStore(embedding_dimension=dim)
     metadata_store = MetadataStore()
-    embedder = FakeEmbedder(dimension=dim)
+    embedder = RegisteredEmbedder(dimension=dim)
 
-    chunk_vectors = [make_normalized_vector(seed=i, dim=dim) for i in range(3)]
+    chunk_vectors = [unit_vector(seed=i, dim=dim) for i in range(3)]
     ids = [10, 11, 12]
     faiss_store.add_vectors(np.vstack(chunk_vectors), ids)
 
@@ -49,7 +27,7 @@ def populated_store():
     metadata_store.add_records(records)
 
     embedder.register("question about topic 1", chunk_vectors[1])
-    unrelated_vector = make_normalized_vector(seed=999, dim=dim)
+    unrelated_vector = unit_vector(seed=999, dim=dim)
     embedder.register("completely unrelated question", unrelated_vector)
 
     return embedder, faiss_store, metadata_store

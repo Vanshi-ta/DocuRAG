@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
 
 from src.retrieval.retriever import RetrievedChunk
 
@@ -33,7 +32,7 @@ STYLE
 14. For comparison questions, prefer a structured answer (e.g. short bullet lists per entity, then a conclusion) over a single dense paragraph."""
 
 
-def format_context(chunks: List[RetrievedChunk]) -> str:
+def format_context(chunks: list[RetrievedChunk]) -> str:
     
     if not chunks:
         return "(no relevant context was retrieved)"
@@ -48,7 +47,7 @@ def format_context(chunks: List[RetrievedChunk]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def build_prompt(question: str, chunks: List[RetrievedChunk]) -> str:
+def build_prompt(question: str, chunks: list[RetrievedChunk]) -> str:
     context = format_context(chunks)
     return (
         f"{SYSTEM_INSTRUCTIONS}\n\n"

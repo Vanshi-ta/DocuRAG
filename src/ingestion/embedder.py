@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List
+
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -23,7 +23,7 @@ class Embedder:
         self.embedding_dimension: int = self.model.get_sentence_embedding_dimension()
         logger.info("Model loaded. Embedding dimension: %d", self.embedding_dimension)
 
-    def embed_texts(self, texts: List[str]) -> np.ndarray:
+    def embed_texts(self, texts: list[str]) -> np.ndarray:
         
         if not texts:
             return np.empty((0, self.embedding_dimension), dtype="float32")

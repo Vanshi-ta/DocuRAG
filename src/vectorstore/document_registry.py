@@ -7,7 +7,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,33 +19,33 @@ class DocumentEntry:
     content_hash: str
     page_count: int
     chunk_count: int
-    vector_ids: List[int]
+    vector_ids: list[int]
     indexed_at: str
 
 
 @dataclass
 class DocumentRegistry:
-    documents: Dict[str, DocumentEntry] = field(default_factory=dict)                   
+    documents: dict[str, DocumentEntry] = field(default_factory=dict)                   
     next_vector_id: int = 0
 
                                                                              
-    def find_by_hash(self, content_hash: str) -> Optional[DocumentEntry]:
+    def find_by_hash(self, content_hash: str) -> DocumentEntry | None:
         for entry in self.documents.values():
             if entry.content_hash == content_hash:
                 return entry
         return None
 
-    def find_by_filename(self, filename: str) -> Optional[DocumentEntry]:
+    def find_by_filename(self, filename: str) -> DocumentEntry | None:
         for entry in self.documents.values():
             if entry.source_filename == filename:
                 return entry
         return None
 
-    def list_documents(self) -> List[DocumentEntry]:
+    def list_documents(self) -> list[DocumentEntry]:
         return sorted(self.documents.values(), key=lambda e: e.source_filename)
 
                                                                               
-    def allocate_vector_ids(self, n: int) -> List[int]:
+    def allocate_vector_ids(self, n: int) -> list[int]:
         ids = list(range(self.next_vector_id, self.next_vector_id + n))
         self.next_vector_id += n
         return ids
@@ -57,7 +57,7 @@ class DocumentRegistry:
         content_hash: str,
         page_count: int,
         chunk_count: int,
-        vector_ids: List[int],
+        vector_ids: list[int],
     ) -> DocumentEntry:
         entry = DocumentEntry(
             doc_id=doc_id,
@@ -75,7 +75,7 @@ class DocumentRegistry:
         )
         return entry
 
-    def remove_document(self, doc_id: str) -> List[int]:
+    def remove_document(self, doc_id: str) -> list[int]:
         
         entry = self.documents.pop(doc_id, None)
         if entry is None:
@@ -98,7 +98,7 @@ class DocumentRegistry:
         logger.info("Saved document registry (%d documents) to %s", len(self.documents), path)
 
     @classmethod
-    def load(cls, path: Path) -> "DocumentRegistry":
+    def load(cls, path: Path) -> DocumentRegistry:
         if not path.exists():
             raise FileNotFoundError(f"No document registry found at {path}")
         with open(path, "r", encoding="utf-8") as f:

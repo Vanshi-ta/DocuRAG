@@ -10,10 +10,7 @@ This does NOT change your config.py defaults — it's a read-only experiment
 so you can visually compare outcomes before deciding on final values.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+import _common  # noqa: F401  (makes the project root importable)
 
 from config import UPLOAD_DIR
 from src.ingestion.pdf_loader import load_pdfs_from_directory
@@ -21,11 +18,11 @@ from src.ingestion.text_splitter import split_documents
 
 # Each tuple is (chunk_size, chunk_overlap). Feel free to add/remove rows.
 EXPERIMENTS = [
-    (300, 30),     # too small — see Phase 3 guide for what to expect
+    (300, 30),     # likely too small: many tiny chunks with little context each
     (500, 75),
     (1000, 150),   # current recommended default for technical PDFs
     (2000, 200),
-    (4000, 300),   # too large — see Phase 3 guide for what to expect
+    (4000, 300),   # likely too large: few coarse chunks that blur several topics
 ]
 
 

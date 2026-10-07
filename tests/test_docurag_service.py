@@ -1,32 +1,12 @@
 """Smoke tests for DocuRAGService with a fake embedder and fake LLM client."""
 
-import hashlib
-import sys
-from pathlib import Path
 
-import numpy as np
 import pytest
-from reportlab.pdfgen import canvas
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.errors import EmptyQuestionError, IndexNotReadyError
 from src.services.docurag_service import DocuRAGService
-
-
-class FakeEmbedder:
-    embedding_dimension = 16
-
-    def embed_texts(self, texts):
-        out = []
-        for t in texts:
-            seed = int(hashlib.sha256(t.encode()).hexdigest()[:8], 16)
-            v = np.random.default_rng(seed).random(self.embedding_dimension)
-            out.append((v / np.linalg.norm(v)).astype("float32"))
-        return np.vstack(out)
-
-    def embed_query(self, t):
-        return self.embed_texts([t])
+from tests.helpers import DeterministicFakeEmbedder, make_pdf
 
 
 class FakeLLM:
@@ -41,23 +21,14 @@ class FakeLLM:
 
 
 def pdf_bytes(tmp_path, text):
-    p = tmp_path / "tmp.pdf"
-    c = canvas.Canvas(str(p))
-    c.drawString(72, 750, text)
-    c.showPage()
-    c.save()
-    return p.read_bytes()
+    path = tmp_path / "tmp.pdf"
+    make_pdf(path, [text])
+    return path.read_bytes()
 
 
 @pytest.fixture
-def service(tmp_path, monkeypatch):
-    store_dir = tmp_path / "vector_store"
-    store_dir.mkdir()
-    for prefix in ("config", "src.pipeline"):
-        monkeypatch.setattr(f"{prefix}.FAISS_INDEX_PATH", store_dir / "index.faiss")
-        monkeypatch.setattr(f"{prefix}.METADATA_STORE_PATH", store_dir / "metadata.json")
-        monkeypatch.setattr(f"{prefix}.DOCUMENT_REGISTRY_PATH", store_dir / "documents.json")
-    return DocuRAGService(embedder=FakeEmbedder(), llm_client=FakeLLM(), upload_dir=tmp_path / "uploads")
+def service(isolated_dirs):
+    return DocuRAGService(embedder=DeterministicFakeEmbedder(), llm_client=FakeLLM(), upload_dir=isolated_dirs)
 
 
 def test_ask_before_indexing_raises_index_not_ready(service):
@@ -111,6 +82,25 @@ def test_load_existing_restores_persisted_index(service, tmp_path):
     saved, _ = service.save_uploads({"a.pdf": pdf_bytes(tmp_path, "Alpha text here.")})
     service.ingest(paths=saved)
 
-    fresh = DocuRAGService(embedder=FakeEmbedder(), llm_client=FakeLLM(), upload_dir=service.upload_dir)
+    fresh = DocuRAGService(embedder=DeterministicFakeEmbedder(), llm_client=FakeLLM(), upload_dir=service.upload_dir)
     assert fresh.load_existing() is True
     assert len(fresh.list_documents()) == 1
+
+
+def test_ask_passes_similarity_threshold_only_when_requested(service, tmp_path, monkeypatch):
+    from config import SIMILARITY_THRESHOLD_VALUE
+
+    saved, _ = service.save_uploads({"policy.pdf": pdf_bytes(tmp_path, "The refund window is 30 days.")})
+    service.ingest(paths=saved)
+
+    seen = []
+
+    def fake_answer_question(question, retriever, llm_client, top_k, similarity_threshold):
+        seen.append(similarity_threshold)
+
+    monkeypatch.setattr("src.services.docurag_service.answer_question", fake_answer_question)
+
+    service.ask("What is the refund window?", use_threshold=False)
+    service.ask("What is the refund window?", use_threshold=True)
+
+    assert seen == [None, SIMILARITY_THRESHOLD_VALUE]
